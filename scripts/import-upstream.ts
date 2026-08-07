@@ -1,7 +1,7 @@
 /**
  * Script de importacao do catalogo louvorja.com.br
- * Baixa: categorias, albums, musicas (com letras e URLs de audio)
- * Salva no SQLite. URLs de midia apontam pro upstream (streaming direto).
+ * Baixa de /json_db/ (formato cru, sem wrapper) e /db/ (com wrapper {data,meta})
+ * Salva no SQLite com paridade completa de dados.
  *
  * Uso: npx tsx scripts/import-upstream.ts
  * Env: UPSTREAM_API (default: https://api.louvorja.com.br)
@@ -15,21 +15,24 @@ import Database from "better-sqlite3";
 const UPSTREAM = process.env.UPSTREAM_API ?? "https://api.louvorja.com.br";
 const DB_PATH = process.env.DB_PATH ?? "./data/catalog.db";
 
-// Criar diretorio do DB se nao existir
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 db.pragma("foreign_keys = ON");
 
-// Rodar migrations
+// Rodar migrations (com try/catch pra ALTER TABLE duplicado)
 const migrationsDir = join(process.cwd(), "src", "db", "migrations");
 if (existsSync(migrationsDir)) {
   const files = readdirSync(migrationsDir)
     .filter((f: string) => f.endsWith(".sql"))
     .sort();
   for (const file of files) {
-    db.exec(readFileSync(join(migrationsDir, file), "utf-8"));
+    try {
+      db.exec(readFileSync(join(migrationsDir, file), "utf-8"));
+    } catch (e: any) {
+      if (!e.message?.includes("duplicate column name")) throw e;
+    }
   }
   console.log(`${files.length} migrations aplicadas`);
 }
@@ -52,7 +55,6 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-// Garantir que linguagens existem
 function ensureLanguages() {
   const insert = db.prepare(
     "INSERT OR IGNORE INTO languages (id_language, name) VALUES (?, ?)",
@@ -63,48 +65,136 @@ function ensureLanguages() {
   console.log("Linguagens garantidas: pt, en, es");
 }
 
+/**
+ * Converte path do upstream (ex: /musics/pt/album/song.mp3) em dir + file_name.
+ * dir = tudo ate a ultima /, file_name = ultima parte.
+ */
+function parseFilePath(fullPath: string): { dir: string; file_name: string } {
+  const idx = fullPath.lastIndexOf("/");
+  if (idx === -1) return { dir: "/", file_name: fullPath };
+  return {
+    dir: fullPath.substring(0, idx),
+    file_name: fullPath.substring(idx + 1),
+  };
+}
+
 // ==============================================
-// 1. CATEGORIAS + ALBUMS
+// 1. CONFIG (version metadata)
+// ==============================================
+
+async function importConfig() {
+  console.log("\n=== IMPORTANDO CONFIG ===");
+  const config = await fetchJson("/json_db/config");
+  if (!config) {
+    console.log("  Sem config");
+    return;
+  }
+  console.log(
+    `  version: ${config.version_number}, updated: ${config.latest_updated}`,
+  );
+  // Salvar como registro unico na tabela licenses? Nao, guardar em memoria.
+  // O app consome via /json_db/config que as rotas compat ja servem.
+}
+
+// ==============================================
+// 2. CATEGORIAS + ALBUMS (com slug, type, order)
 // ==============================================
 
 async function importCategoriesWithAlbums(lang = "pt") {
   console.log(`\n=== IMPORTANDO CATEGORIAS (${lang}) ===`);
-  const data = await fetchJson(`/db/${lang}_categories`);
 
-  if (!data?.data) {
-    console.log("Sem categorias para importar");
+  // O upstream serve /json_db/{lang}_categories (array cru, sem wrapper)
+  const categories = await fetchJson(`/json_db/${lang}_categories`);
+
+  if (!Array.isArray(categories)) {
+    console.log("  Sem categorias (resposta nao e array)");
     return { categories: 0, albums: 0 };
   }
 
-  const insertCat = db.prepare(
-    "INSERT OR REPLACE INTO categories (id_category, name, id_language) VALUES (?, ?, ?)",
-  );
+  const insertCat = db.prepare(`
+    INSERT OR REPLACE INTO categories (id_category, name, slug, "order", type, id_language)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
 
   const insertAlbum = db.prepare(`
     INSERT OR REPLACE INTO albums (id_album, name, id_file_image, color, id_language)
     VALUES (?, ?, NULL, ?, ?)
   `);
 
-  const insertCatAlbum = db.prepare(
-    "INSERT OR REPLACE INTO categories_albums (id_category, id_album) VALUES (?, ?)",
-  );
+  const insertCatAlbum = db.prepare(`
+    INSERT OR REPLACE INTO categories_albums (id_category, id_album, name, "order", id_language)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+
+  // Inserir ou atualizar file
+  const insertFile = db.prepare(`
+    INSERT OR REPLACE INTO files (name, path, type, url, size, dir, file_name)
+    VALUES (?, ?, ?, ?, 0, ?, ?)
+  `);
 
   let catCount = 0;
   let albumCount = 0;
 
-  for (const cat of data.data) {
-    insertCat.run(cat.id_category, cat.name, lang);
+  for (const cat of categories) {
+    insertCat.run(
+      cat.id_category,
+      cat.name,
+      cat.slug || null,
+      cat.order ?? 0,
+      "collection",
+      lang,
+    );
     catCount++;
 
     if (cat.albums && Array.isArray(cat.albums)) {
       for (const album of cat.albums) {
+        let imageFileId: number | null = null;
+
+        // Importar capa do album se tiver url_image
+        if (album.url_image) {
+          const { dir, file_name } = parseFilePath(album.url_image);
+          // Gerar ID unico deterministico baseado no path
+          const fileKey = album.url_image;
+          // Buscar se ja existe
+          const existing = db
+            .prepare("SELECT id_file FROM files WHERE url = ?")
+            .get(fileKey) as any;
+          if (existing) {
+            imageFileId = existing.id_file;
+          } else {
+            const result = insertFile.run(
+              file_name,
+              fileKey,
+              "image",
+              fileKey,
+              dir,
+              file_name,
+            );
+            imageFileId = Number(result.lastInsertRowid);
+          }
+        }
+
         insertAlbum.run(
           album.id_album,
           album.name,
           album.color || "#000000",
           lang,
         );
-        insertCatAlbum.run(cat.id_category, album.id_album);
+
+        // Atualizar id_file_image do album
+        if (imageFileId) {
+          db.prepare(
+            "UPDATE albums SET id_file_image = ? WHERE id_album = ?",
+          ).run(imageFileId, album.id_album);
+        }
+
+        insertCatAlbum.run(
+          cat.id_category,
+          album.id_album,
+          album.subtitle || null,
+          album.order ?? 0,
+          lang,
+        );
         albumCount++;
       }
     }
@@ -115,168 +205,192 @@ async function importCategoriesWithAlbums(lang = "pt") {
 }
 
 // ==============================================
-// 2. MUSICAS (com letra + URLs de audio)
+// 3. MUSICAS (com letra texto, albums com track)
 // ==============================================
 
 async function importMusics(lang = "pt") {
   console.log(`\n=== IMPORTANDO MUSICAS (${lang}) ===`);
 
-  // Primeiro descobrir total de paginas
-  const first = await fetchJson(`/db/${lang}_musics?page=1`);
-  if (!first?.data) {
-    console.log("Sem musicas para importar");
+  // /json_db/{lang}_musics retorna array cru de todas as musicas
+  const musics = await fetchJson(`/json_db/${lang}_musics`);
+
+  if (!Array.isArray(musics)) {
+    console.log("  Sem musicas (resposta nao e array)");
     return 0;
   }
 
-  const lastPage = first.meta?.last_page ?? 1;
-  const total = first.meta?.total ?? 0;
-  console.log(`  Total: ${total} musicas em ${lastPage} paginas`);
+  console.log(`  Total: ${musics.length} musicas`);
 
   const insertMusic = db.prepare(`
     INSERT OR REPLACE INTO musics (id_music, name, id_file_image, id_file_music, id_file_instrumental_music, id_language)
     VALUES (?, ?, NULL, NULL, NULL, ?)
   `);
 
-  // Inserir ou atualizar file e ligar na musica
-  const _insertFile = db.prepare(`
-    INSERT OR REPLACE INTO files (id_file, name, path, type, url, size)
-    VALUES (?, ?, ?, ?, ?, 0)
-  `);
-  const _updateMusicFile = db.prepare(`
-    UPDATE musics SET id_file_image = ?, id_file_music = ?, id_file_instrumental_music = ? WHERE id_music = ?
+  const ensureAlbum = db.prepare(`
+    INSERT OR IGNORE INTO albums (id_album, name, id_file_image, color, id_language)
+    VALUES (?, ?, NULL, '#000000', ?)
   `);
 
-  // Inserir albums_musics
-  const insertAlbumMusic = db.prepare(
-    "INSERT OR IGNORE INTO albums_musics (id_album, id_music) VALUES (?, ?)",
-  );
+  const insertAlbumMusic = db.prepare(`
+    INSERT OR REPLACE INTO albums_musics (id_album, id_music, track, id_language)
+    VALUES (?, ?, ?, ?)
+  `);
 
-  // Garantir que qualquer album referenciado exista (evita FK error)
-  const ensureAlbum = db.prepare(
-    "INSERT OR IGNORE INTO albums (id_album, name, id_file_image, color, id_language) VALUES (?, ?, NULL, ?, ?)",
-  );
+  // Limpar letras simplificadas antes de importar
+  // (as detalhadas virao no importMusicDetails)
+  const deleteLyrics = db.prepare("DELETE FROM lyrics WHERE id_music = ?");
 
   let count = 0;
 
-  for (let page = 1; page <= lastPage; page++) {
-    const pageData =
-      page === 1 ? first : await fetchJson(`/db/${lang}_musics?page=${page}`);
-    if (!pageData?.data) continue;
+  for (const music of musics) {
+    insertMusic.run(music.id_music, music.name, lang);
 
-    for (const music of pageData.data) {
-      // Inserir musica basica
-      insertMusic.run(music.id_music, music.name, lang);
+    // Processar albums da musica (agora vem como array de objetos com pivot)
+    if (music.albums && Array.isArray(music.albums)) {
+      for (const alb of music.albums) {
+        const albumId = alb.id_album ?? (typeof alb === "number" ? alb : null);
+        if (!albumId) continue;
+        const albumName = alb.name ?? `Album ${albumId}`;
+        const track = alb.pivot?.track ?? alb.track ?? null;
 
-      // Processar albums da musica
-      if (music.albums && Array.isArray(music.albums)) {
-        for (const alb of music.albums) {
-          const albumId = typeof alb === "number" ? alb : alb.id_album;
-          const albumName =
-            typeof alb === "object"
-              ? (alb.name ?? `Album ${albumId}`)
-              : `Album ${albumId}`;
-          if (albumId) {
-            ensureAlbum.run(albumId, albumName, "#000000", lang);
-            insertAlbumMusic.run(albumId, music.id_music);
-          }
-        }
-      }
-
-      // Inserir letra como texto completo
-      if (music.lyric) {
-        db.prepare(`
-          INSERT INTO lyrics (id_music, lyric, aux_lyric, id_file_image, time, instrumental_time, show_slide, "order", id_language)
-          VALUES (?, ?, NULL, NULL, ?, ?, 1, 1, ?)
-        `).run(
-          music.id_music,
-          music.lyric,
-          music.duration || "00:00:00",
-          music.has_instrumental_music ? "00:00:00" : "00:00:00",
-          lang,
-        );
+        ensureAlbum.run(albumId, albumName, lang);
+        insertAlbumMusic.run(albumId, music.id_music, track, lang);
       }
     }
 
-    count += pageData.data.length;
-    process.stdout.write(`\r  Pagina ${page}/${lastPage} - ${count} musicas`);
-    await sleep(100); // nao saturar a API
+    // Inserir letra como texto completo (sera substituida por estrofes detalhadas depois)
+    if (music.lyric) {
+      deleteLyrics.run(music.id_music);
+      db.prepare(`
+        INSERT INTO lyrics (id_music, lyric, aux_lyric, id_file_image, time, instrumental_time, show_slide, "order", id_language)
+        VALUES (?, ?, NULL, NULL, '00:00:00', '00:00:00', 1, 1, ?)
+      `).run(music.id_music, music.lyric, lang);
+    }
+
+    count++;
+    if (count % 200 === 0) {
+      process.stdout.write(`\r  ${count}/${musics.length} musicas`);
+    }
   }
 
-  console.log("");
+  console.log(`\n  ${count} musicas importadas`);
   return count;
 }
 
 // ==============================================
-// 3. DETALHES DE CADA MUSICA (audio URLs)
+// 4. DETALHES DE CADA MUSICA (audio, imagem, estrofes com timing)
 // ==============================================
 
 async function importMusicDetails(lang = "pt") {
-  console.log(`\n=== IMPORTANDO DETALHES DE MUSICAS (audio, imagem) ===`);
+  console.log(
+    `\n=== IMPORTANDO DETALHES DE MUSICAS (audio, imagem, estrofes) ===`,
+  );
 
-  // Buscar todas as musicas que ainda nao tem file_music
   const musics = db
-    .prepare(`
-    SELECT id_music FROM musics WHERE id_language = ? AND id_file_music IS NULL
-  `)
+    .prepare(
+      `SELECT id_music FROM musics WHERE id_language = ? ORDER BY id_music`,
+    )
     .all(lang) as { id_music: number }[];
 
   console.log(`  ${musics.length} musicas precisam de detalhes`);
 
   const insertFile = db.prepare(`
-    INSERT INTO files (name, path, type, url, size)
-    VALUES (?, ?, ?, ?, 0)
+    INSERT INTO files (name, path, type, url, size, dir, file_name, duration, image_position)
+    VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?)
   `);
+
   const updateMusicFiles = db.prepare(`
-    UPDATE musics SET id_file_image = ?, id_file_music = ?, id_file_instrumental_music = ? WHERE id_music = ?
+    UPDATE musics SET id_file_image = ?, id_file_music = ?, id_file_instrumental_music = ?
+    WHERE id_music = ?
   `);
+
+  const deleteLyrics = db.prepare("DELETE FROM lyrics WHERE id_music = ?");
+
+  const insertDetailedLyric = db.prepare(`
+    INSERT OR REPLACE INTO lyrics (id_lyric, id_music, lyric, aux_lyric, id_file_image, time, instrumental_time, show_slide, "order", id_language)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  // Buscar ou criar file de imagem de estrofe
+  const findFileByUrl = db.prepare("SELECT id_file FROM files WHERE url = ?");
 
   let count = 0;
   let fails = 0;
 
   for (const m of musics) {
-    const detail = await fetchJson(`/db/music_${m.id_music}`);
+    // /json_db/music_{id} retorna objeto cru (sem wrapper)
+    const detail = await fetchJson(`/json_db/music_${m.id_music}`);
 
-    if (!detail?.data) {
+    if (!detail || detail.error) {
       fails++;
       continue;
     }
 
-    const d = detail.data;
     let imageFileId: number | null = null;
     let musicFileId: number | null = null;
     let instrumentalFileId: number | null = null;
 
-    // URL da imagem
-    if (d.url_image) {
-      const result = insertFile.run(
-        d.url_image.split("/").pop() || "image",
-        d.url_image,
-        "image",
-        `${UPSTREAM}${d.url_image}`,
-      );
-      imageFileId = Number(result.lastInsertRowid);
+    // URL da imagem da musica
+    if (detail.url_image) {
+      const existing = findFileByUrl.get(detail.url_image) as any;
+      if (existing) {
+        imageFileId = existing.id_file;
+      } else {
+        const { dir, file_name } = parseFilePath(detail.url_image);
+        const result = insertFile.run(
+          file_name,
+          detail.url_image,
+          "image",
+          detail.url_image,
+          dir,
+          file_name,
+          null,
+          detail.image_position ?? null,
+        );
+        imageFileId = Number(result.lastInsertRowid);
+      }
     }
 
     // URL do audio cantado
-    if (d.url_music) {
-      const result = insertFile.run(
-        d.url_music.split("/").pop() || "audio",
-        d.url_music,
-        "audio",
-        `${UPSTREAM}${d.url_music}`,
-      );
-      musicFileId = Number(result.lastInsertRowid);
+    if (detail.url_music) {
+      const existing = findFileByUrl.get(detail.url_music) as any;
+      if (existing) {
+        musicFileId = existing.id_file;
+      } else {
+        const { dir, file_name } = parseFilePath(detail.url_music);
+        const result = insertFile.run(
+          file_name,
+          detail.url_music,
+          "audio",
+          detail.url_music,
+          dir,
+          file_name,
+          detail.duration ?? null,
+          null,
+        );
+        musicFileId = Number(result.lastInsertRowid);
+      }
     }
 
     // URL do audio instrumental
-    if (d.url_instrumental_music) {
-      const result = insertFile.run(
-        d.url_instrumental_music.split("/").pop() || "audio",
-        d.url_instrumental_music,
-        "audio",
-        `${UPSTREAM}${d.url_instrumental_music}`,
-      );
-      instrumentalFileId = Number(result.lastInsertRowid);
+    if (detail.url_instrumental_music) {
+      const existing = findFileByUrl.get(detail.url_instrumental_music) as any;
+      if (existing) {
+        instrumentalFileId = existing.id_file;
+      } else {
+        const { dir, file_name } = parseFilePath(detail.url_instrumental_music);
+        const result = insertFile.run(
+          file_name,
+          detail.url_instrumental_music,
+          "audio",
+          detail.url_instrumental_music,
+          dir,
+          file_name,
+          detail.instrumental_duration ?? null,
+          null,
+        );
+        instrumentalFileId = Number(result.lastInsertRowid);
+      }
     }
 
     updateMusicFiles.run(
@@ -286,6 +400,52 @@ async function importMusicDetails(lang = "pt") {
       m.id_music,
     );
 
+    // Inserir estrofes detalhadas (com timing, show_slide, order, url_image)
+    if (
+      detail.lyric &&
+      Array.isArray(detail.lyric) &&
+      detail.lyric.length > 0
+    ) {
+      deleteLyrics.run(m.id_music);
+
+      for (const lyric of detail.lyric) {
+        let lyricImageFileId: number | null = null;
+
+        if (lyric.url_image) {
+          const existing = findFileByUrl.get(lyric.url_image) as any;
+          if (existing) {
+            lyricImageFileId = existing.id_file;
+          } else {
+            const { dir, file_name } = parseFilePath(lyric.url_image);
+            const result = insertFile.run(
+              file_name,
+              lyric.url_image,
+              "image",
+              lyric.url_image,
+              dir,
+              file_name,
+              null,
+              lyric.image_position ?? null,
+            );
+            lyricImageFileId = Number(result.lastInsertRowid);
+          }
+        }
+
+        insertDetailedLyric.run(
+          lyric.id_lyric ?? null,
+          m.id_music,
+          lyric.lyric || "",
+          lyric.aux_lyric || null,
+          lyricImageFileId,
+          lyric.time || "00:00:00",
+          lyric.instrumental_time || "00:00:00",
+          lyric.show_slide ? 1 : 0,
+          lyric.order ?? 0,
+          lang,
+        );
+      }
+    }
+
     count++;
     if (count % 50 === 0) {
       process.stdout.write(
@@ -293,81 +453,127 @@ async function importMusicDetails(lang = "pt") {
       );
     }
 
-    // Atualizar letra detalhada se tiver array de lyrics
-    if (d.lyric && Array.isArray(d.lyric) && d.lyric.length > 0) {
-      // Limpar letras antigas e inserir as detalhadas
-      db.prepare("DELETE FROM lyrics WHERE id_music = ?").run(m.id_music);
-
-      const insertDetailedLyric = db.prepare(`
-        INSERT INTO lyrics (id_music, lyric, aux_lyric, id_file_image, time, instrumental_time, show_slide, "order", id_language)
-        VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)
-      `);
-
-      for (const lyric of d.lyric) {
-        insertDetailedLyric.run(
-          m.id_music,
-          lyric.lyric || "",
-          lyric.aux_lyric || null,
-          lyric.time || "00:00:00",
-          lyric.instrumental_time || "00:00:00",
-          lyric.show_slide !== false ? 1 : 0,
-          lyric.order ?? 0,
-          lang,
-        );
-      }
-    }
-
-    await sleep(50); // nao saturar
+    await sleep(30);
   }
 
-  console.log(`\r  ${count}/${musics.length} processadas (${fails} falhas)`);
+  console.log(`\n  ${count}/${musics.length} processadas (${fails} falhas)`);
   return count;
 }
 
 // ==============================================
-// 4. BIBLIA (opcional - pesado)
+// 5. ALBUMS: importar track e has_instrumental_music
+// ==============================================
+
+async function importAlbumDetails(lang = "pt") {
+  console.log(`\n=== IMPORTANDO DETALHES DE ALBUMS (musics com track) ===`);
+
+  const albums = db
+    .prepare(
+      `SELECT id_album FROM albums WHERE id_language = ? ORDER BY id_album`,
+    )
+    .all(lang) as { id_album: number }[];
+
+  console.log(`  ${albums.length} albums para processar`);
+
+  const updateAlbumMusicTrack = db.prepare(`
+    UPDATE albums_musics SET track = ? WHERE id_album = ? AND id_music = ?
+  `);
+
+  let count = 0;
+  let fails = 0;
+
+  for (const a of albums) {
+    const detail = await fetchJson(`/json_db/album_${a.id_album}`);
+
+    if (!detail || detail.error) {
+      fails++;
+      continue;
+    }
+
+    // Atualizar track de cada musica no album
+    if (detail.musics && Array.isArray(detail.musics)) {
+      for (const music of detail.musics) {
+        updateAlbumMusicTrack.run(
+          music.track ?? null,
+          a.id_album,
+          music.id_music,
+        );
+      }
+    }
+
+    count++;
+    if (count % 50 === 0) {
+      process.stdout.write(
+        `\r  ${count}/${albums.length} albums (${fails} falhas)`,
+      );
+    }
+
+    await sleep(30);
+  }
+
+  console.log(
+    `\n  ${count}/${albums.length} albums processados (${fails} falhas)`,
+  );
+  return count;
+}
+
+// ==============================================
+// 6. HINARIOS (pt_hymnal, pt_hymnal_1996)
+// ==============================================
+
+async function importHymnals(lang = "pt") {
+  console.log(`\n=== IMPORTANDO HINARIOS (${lang}) ===`);
+
+  // O upstream cria categorias com slug 'hymnal' e 'hymnal_1996' que o app consome
+  // Precisamos garantir que essas categorias existem com type='hymnal'
+  const hymnal = await fetchJson(`/json_db/${lang}_hymnal`);
+  if (Array.isArray(hymnal)) {
+    console.log(`  pt_hymnal: ${hymnal.length} hinos`);
+  }
+
+  // Tentar hymnal_1996 (pode nao existir em todos idiomas)
+  const hymnal1996 = await fetchJson(`/json_db/${lang}_hymnal_1996`);
+  if (Array.isArray(hymnal1996)) {
+    console.log(`  pt_hymnal_1996: ${hymnal1996.length} hinos`);
+  }
+}
+
+// ==============================================
+// 7. BIBLIA
 // ==============================================
 
 async function importBible() {
   console.log("\n=== IMPORTANDO BIBLIA (PT) ===");
 
   // Versoes
-  const versions = await fetchJson("/db/pt_bible_version");
-  if (!versions?.data) {
-    console.log("Sem versoes biblicas");
-    return;
+  const versions = await fetchJson("/json_db/pt_bible_version");
+  if (Array.isArray(versions)) {
+    for (const v of versions) {
+      db.prepare(
+        "INSERT OR IGNORE INTO bible_versions (id_version, name, language) VALUES (?, ?, ?)",
+      ).run(v.id_bible_version ?? v.id, v.name, "pt");
+    }
+    console.log(`  ${versions.length} versoes`);
   }
-
-  const insertVersion = db.prepare(
-    "INSERT OR IGNORE INTO bible_versions (id_version, name, language) VALUES (?, ?, ?)",
-  );
-  for (const v of versions.data) {
-    insertVersion.run(String(v.id_version || v.id), v.name || "unknown", "pt");
-  }
-  console.log(`  ${versions.data.length} versoes`);
 
   // Livros
-  const books = await fetchJson("/db/pt_bible_book");
-  if (!books?.data) {
-    console.log("Sem livros biblicos");
-    return;
+  const books = await fetchJson("/json_db/pt_bible_book");
+  if (Array.isArray(books)) {
+    for (const b of books) {
+      db.prepare(
+        "INSERT OR IGNORE INTO bible_books (id_book, name, abbreviation, chapters, book_number, id_language) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(
+        b.id_bible_book ?? b.id_book,
+        b.name,
+        b.abbreviation,
+        b.chapters,
+        b.book_number,
+        "pt",
+      );
+    }
+    console.log(`  ${books.length} livros`);
   }
 
-  const insertBook = db.prepare(
-    "INSERT OR IGNORE INTO bible_books (id_book, name, abbreviation, chapters, book_number, id_language) VALUES (?, ?, ?, ?, ?, ?)",
-  );
-  for (const b of books.data) {
-    const id = b.id_bible_book || b.id_book || b.id;
-    insertBook.run(
-      id,
-      b.name || "",
-      b.abbreviation || b.abbrev || "",
-      b.chapters || 0,
-      b.book_number || id,
-      "pt",
-    );
-  }
-  console.log(`  ${books.data.length} livros`);
   console.log("  (versiculos importados sob demanda via lazy proxy)");
 }
 
@@ -385,31 +591,82 @@ async function main() {
 
   ensureLanguages();
 
-  // 1. Categorias + Albums
+  // 0. Config
+  await importConfig();
+
+  // 1. Categorias + Albums (com slug, type, order, subtitle, url_image)
   await importCategoriesWithAlbums("pt");
 
-  // 2. Musicas (basico)
+  // 2. Musicas (com letra texto, albums com track do pivot)
   await importMusics("pt");
 
-  // 3. Detalhes de cada musica (audio, imagem, letra detalhada)
+  // 3. Hinarios
+  await importHymnals("pt");
+
+  // 4. Detalhes de cada album (atualizar track das musicas)
+  await importAlbumDetails("pt");
+
+  // 5. Detalhes de cada musica (audio, imagem, estrofes com timing)
   await importMusicDetails("pt");
 
-  // 4. Biblia (opcional)
+  // 6. Biblia
   await importBible();
 
   // Stats finais
-  const stats = {
-    categories: db.prepare("SELECT count(*) as c FROM categories").get() as any,
-    albums: db.prepare("SELECT count(*) as c FROM albums").get() as any,
-    musics: db.prepare("SELECT count(*) as c FROM musics").get() as any,
-    lyrics: db.prepare("SELECT count(*) as c FROM lyrics").get() as any,
-    files: db.prepare("SELECT count(*) as c FROM files").get() as any,
-    albums_musics: db
-      .prepare("SELECT count(*) as c FROM albums_musics")
-      .get() as any,
-    bible_books: db
-      .prepare("SELECT count(*) as c FROM bible_books")
-      .get() as any,
+  const tables = [
+    "categories",
+    "albums",
+    "musics",
+    "lyrics",
+    "files",
+    "albums_musics",
+    "categories_albums",
+    "bible_books",
+  ];
+  const stats: Record<string, number> = {};
+  for (const t of tables) {
+    const row = db.prepare(`SELECT count(*) as c FROM ${t}`).get() as any;
+    stats[t] = row?.c ?? 0;
+  }
+
+  // Verificar colunas populadas
+  const populatedCheck = {
+    cats_with_slug:
+      (
+        db
+          .prepare(
+            `SELECT count(*) as c FROM categories WHERE slug IS NOT NULL`,
+          )
+          .get() as any
+      )?.c ?? 0,
+    albums_with_track:
+      (
+        db
+          .prepare(
+            `SELECT count(*) as c FROM albums_musics WHERE track IS NOT NULL`,
+          )
+          .get() as any
+      )?.c ?? 0,
+    files_with_duration:
+      (
+        db
+          .prepare(`SELECT count(*) as c FROM files WHERE duration IS NOT NULL`)
+          .get() as any
+      )?.c ?? 0,
+    files_with_dir:
+      (
+        db
+          .prepare(`SELECT count(*) as c FROM files WHERE dir IS NOT NULL`)
+          .get() as any
+      )?.c ?? 0,
+    lyrics_with_id:
+      (
+        db
+          .prepare(
+            `SELECT count(*) as c FROM lyrics WHERE id_lyric IS NOT NULL`,
+          )
+          .get() as any
+      )?.c ?? 0,
   };
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -417,18 +674,18 @@ async function main() {
   console.log("\n=========================================");
   console.log("IMPORTACAO CONCLUIDA");
   console.log(`Tempo: ${elapsed}s`);
-  console.log(`Categorias: ${stats.categories.c}`);
-  console.log(`Albums: ${stats.albums.c}`);
-  console.log(`Musicas: ${stats.musics.c}`);
-  console.log(`Letras: ${stats.lyrics.c}`);
-  console.log(`Arquivos (URLs): ${stats.files.c}`);
-  console.log(`Albums-Musicas: ${stats.albums_musics.c}`);
-  console.log(`Livros Biblicos: ${stats.bible_books.c}`);
+  for (const [k, v] of Object.entries(stats)) {
+    console.log(`  ${k}: ${v}`);
+  }
+  console.log("\nColunas populadas (paridade):");
+  for (const [k, v] of Object.entries(populatedCheck)) {
+    console.log(`  ${k}: ${v}`);
+  }
 
   const pageSize = db.pragma("page_size", { simple: true }) as number;
   const pageCount = db.pragma("page_count", { simple: true }) as number;
   const sizeMB = ((pageSize * pageCount) / 1024 / 1024).toFixed(1);
-  console.log(`SQLite: ${sizeMB} MB`);
+  console.log(`\nSQLite: ${sizeMB} MB`);
   console.log("=========================================");
 
   db.close();
