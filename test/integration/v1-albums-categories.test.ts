@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import router from "../../src/app.js";
 import { closeDb, initDb } from "../../src/db/connection.js";
+import { seedTestData } from "./helpers/seed.js";
 
 describe("GET /v1/albums e /v1/categories", () => {
   beforeAll(() => {
     initDb();
+    seedTestData();
   });
   afterAll(() => {
     closeDb();
