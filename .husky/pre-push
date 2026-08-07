@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Pre-push: typecheck + testes completos (garante que nada quebra)
+echo "==> Typecheck..."
+npx tsc -p tsconfig.test.json --noEmit || { echo "TYPECHECK FALHOU"; exit 1; }
+echo "==> Testes..."
+npx vitest run || { echo "TESTES FALHARAM"; exit 1; }
+echo "==> Pre-push OK"

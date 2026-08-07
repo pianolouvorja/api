@@ -39,7 +39,14 @@ export function initDb(): void {
 
   for (const file of files) {
     const sql = readFileSync(join(migrationsDir, file), "utf-8");
-    db!.exec(sql);
+    try {
+      db!.exec(sql);
+    } catch (e: any) {
+      // ALTER TABLE ADD COLUMN falha se a coluna ja existe — ignorar silenciosamente
+      if (!e.message?.includes("duplicate column name")) {
+        throw e;
+      }
+    }
   }
   console.log(`${files.length} migrations aplicadas`);
 }

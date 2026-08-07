@@ -2,28 +2,32 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { getDb } from "../../db/connection.js";
 import {
   CategoriesListResponseSchema,
-  CategoryDetailSchema,
+  CategorySchema,
 } from "./categories.schemas.js";
 
 const categoriesRoutes = new OpenAPIHono();
 
+// ============================================
+// GET /v1/categories — paridade com /json_db/pt_categories
+// Retorna ARRAY DIRETO (sem wrapper de paginacao)
+// ============================================
 const listCategoriesRoute = createRoute({
   method: "get",
   path: "/",
   tags: ["categories"],
-  summary: "Lista todas as categorias",
-  description: "Lista as categorias de álbuns disponíveis para um idioma.",
+  description:
+    "Lista categorias com coletâneas aninhadas (paridade: pt_categories)",
   request: {
     query: z.object({
-      lang: z.string().default("pt"),
-      page: z.string().default("1"),
-      per_page: z.string().default("20"),
+      lang: z
+        .string()
+        .openapi({ description: "Idioma (ex: pt, es)", example: "pt" }),
     }),
   },
   responses: {
     200: {
       content: { "application/json": { schema: CategoriesListResponseSchema } },
-      description: "Lista de categorias paginada",
+      description: "Lista de categorias com coletâneas",
     },
     500: {
       content: {
@@ -35,64 +39,94 @@ const listCategoriesRoute = createRoute({
 });
 
 categoriesRoutes.openapi(listCategoriesRoute, (c) => {
-  const { lang, page, per_page } = c.req.valid("query");
-  const pageNum = parseInt(page || "1", 10);
-  const perPage = parseInt(per_page || "20", 10);
-  const offset = (pageNum - 1) * perPage;
+  const { lang } = c.req.valid("query");
 
   try {
     const db = getDb();
-    const { count } = db
-      .prepare(`SELECT COUNT(*) as count FROM categories WHERE id_language = ?`)
-      .get(lang) as { count: number };
+
+    // Query de categorias — traduzida do PHP
+    // type='collection', ordenado por order
     const categories = db
       .prepare(
-        `SELECT id_category, name FROM categories WHERE id_language = ? LIMIT ? OFFSET ?`,
+        `SELECT
+          ct.id_category,
+          ct.name,
+          ct.slug,
+          ct."order"
+        FROM categories ct
+        WHERE ct.type = 'collection'
+          AND ct.id_language = ?
+        ORDER BY ct."order"`,
       )
-      .all(lang, perPage, offset) as any[];
+      .all(lang) as any[];
 
-    const resultData = categories.map((cat) => {
-      // Como não existe id_language em categories_albums, buscamos apenas os álbuns daquela categoria
-      // (a tabela original categories já filtrou o idioma)
-      const albumsData = db
-        .prepare(`SELECT id_album FROM categories_albums WHERE id_category = ?`)
-        .all(cat.id_category) as { id_album: number }[];
+    // Para cada categoria, buscar os albums aninhados
+    // Traduzido do PHP: com pivot categories_albums (subtitle, order)
+    // url_image = concat(files_image.dir, '/', files_image.file_name)
+    const result = categories.map((cat) => {
+      const albums = db
+        .prepare(
+          `SELECT
+            al.id_album,
+            al.name,
+            al.color,
+            fi.url as url_image,
+            ca.name as subtitle,
+            ca."order"
+          FROM albums al
+          INNER JOIN categories_albums ca ON ca.id_album = al.id_album
+          LEFT JOIN files fi ON al.id_file_image = fi.id_file
+          WHERE ca.id_category = ?
+            AND al.id_language = ?
+          ORDER BY ca."order"`,
+        )
+        .all(cat.id_category, lang) as any[];
+
       return {
         id_category: cat.id_category,
         name: cat.name,
-        albums: albumsData.map((a) => a.id_album),
+        slug: cat.slug,
+        order: cat.order,
+        albums: albums.map((a) => ({
+          id_album: a.id_album,
+          name: a.name,
+          color: a.color || null,
+          url_image: a.url_image || null,
+          subtitle: a.subtitle || null,
+          order: a.order,
+        })),
       };
     });
 
-    return c.json(
-      {
-        current_page: pageNum,
-        per_page: perPage,
-        total: count,
-        data: resultData,
-      },
-      200,
-    );
+    // Sem wrapper — array direto como o upstream
+    return c.json(result, 200);
   } catch (error) {
     console.error(error);
     return c.json({ error: "Erro ao buscar categorias" }, 500);
   }
 });
 
+// ============================================
+// GET /v1/categories/:id — detalhe individual
+// ============================================
 const getCategoryRoute = createRoute({
   method: "get",
   path: "/{id}",
   tags: ["categories"],
-  summary: "Busca uma categoria pelo ID",
+  description: "Detalhe de uma categoria com coletâneas aninhadas",
   request: {
     params: z.object({
-      id: z.string().openapi({ description: "ID da Categoria", example: "1" }),
+      id: z.string().openapi({ description: "ID da Categoria", example: "6" }),
     }),
-    query: z.object({ lang: z.string().default("pt") }),
+    query: z.object({
+      lang: z
+        .string()
+        .openapi({ description: "Idioma (ex: pt, es)", example: "pt" }),
+    }),
   },
   responses: {
     200: {
-      content: { "application/json": { schema: CategoryDetailSchema } },
+      content: { "application/json": { schema: CategorySchema } },
       description: "Detalhes da categoria",
     },
     404: {
@@ -113,28 +147,60 @@ const getCategoryRoute = createRoute({
 categoriesRoutes.openapi(getCategoryRoute, (c) => {
   const { id } = c.req.valid("param");
   const { lang } = c.req.valid("query");
+  const idCategory = parseInt(id, 10);
 
   try {
     const db = getDb();
-    const cat = db
-      .prepare(
-        `SELECT id_category, name FROM categories WHERE id_category = ? AND id_language = ?`,
-      )
-      .get(parseInt(id, 10), lang) as any;
 
-    if (!cat) {
+    const category = db
+      .prepare(
+        `SELECT
+          ct.id_category,
+          ct.name,
+          ct.slug,
+          ct."order"
+        FROM categories ct
+        WHERE ct.id_category = ?
+          AND ct.id_language = ?`,
+      )
+      .get(idCategory, lang) as any;
+
+    if (!category) {
       return c.json({ error: "Categoria não encontrada" }, 404);
     }
 
-    const albumsData = db
-      .prepare(`SELECT id_album FROM categories_albums WHERE id_category = ?`)
-      .all(cat.id_category) as { id_album: number }[];
+    const albums = db
+      .prepare(
+        `SELECT
+          al.id_album,
+          al.name,
+          al.color,
+          fi.url as url_image,
+          ca.name as subtitle,
+          ca."order"
+        FROM albums al
+        INNER JOIN categories_albums ca ON ca.id_album = al.id_album
+        LEFT JOIN files fi ON al.id_file_image = fi.id_file
+        WHERE ca.id_category = ?
+          AND al.id_language = ?
+        ORDER BY ca."order"`,
+      )
+      .all(idCategory, lang) as any[];
 
     return c.json(
       {
-        id_category: cat.id_category,
-        name: cat.name,
-        albums: albumsData.map((a) => a.id_album),
+        id_category: category.id_category,
+        name: category.name,
+        slug: category.slug,
+        order: category.order,
+        albums: albums.map((a) => ({
+          id_album: a.id_album,
+          name: a.name,
+          color: a.color || null,
+          url_image: a.url_image || null,
+          subtitle: a.subtitle || null,
+          order: a.order,
+        })),
       },
       200,
     );

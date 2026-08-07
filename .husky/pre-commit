@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Pre-commit: formatacao + lint nos arquivos alterados (rapido, <3s)
+npx lint-staged
