@@ -13,6 +13,8 @@ export default defineWorkspace([
       name: "integration",
       environment: "node",
       include: ["test/integration/**/*.test.ts"],
+      // SQLite nao suporta multiplos escritores em paralelo no mesmo arquivo
+      fileParallelism: false,
     },
   },
 ]);
