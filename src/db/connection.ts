@@ -42,8 +42,11 @@ export function initDb(): void {
     try {
       db!.exec(sql);
     } catch (e: any) {
-      // ALTER TABLE ADD COLUMN falha se a coluna ja existe — ignorar silenciosamente
-      if (!e.message?.includes("duplicate column name")) {
+      // Ignorar erros de coluna duplicada ou tabela inexistente em migrations idempotentes
+      if (
+        !e.message?.includes("duplicate column name") &&
+        !e.message?.includes("no such table")
+      ) {
         throw e;
       }
     }

@@ -254,7 +254,7 @@ compatRoutes.get("/json_db/:file", (c) => {
   if (file === "pt_bible_book") {
     const books = db
       .prepare(
-        `SELECT id_book, book_number, name, chapters, abbreviation
+        `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
          FROM bible_books WHERE id_language = 'pt' ORDER BY book_number`,
       )
       .all();
@@ -265,7 +265,7 @@ compatRoutes.get("/json_db/:file", (c) => {
   if (file === "pt_bible_version") {
     const versions = db
       .prepare(
-        `SELECT id_version, name FROM bible_versions WHERE language = 'pt' ORDER BY name`,
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'pt' ORDER BY name`,
       )
       .all();
     return c.json(versions);
