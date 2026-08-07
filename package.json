@@ -1,0 +1,47 @@
+{
+  "name": "piano-api",
+  "version": "0.1.0",
+  "description": "API propria pianolouvorja — hinarios SDA, Louvor JA, CCB",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b tsconfig.app.json",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check src/ test/",
+    "lint:fix": "biome check --write src/ test/",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "validate:pr": "biome check src/ test/ && tsc -p tsconfig.test.json --noEmit && vitest run",
+    "import:upstream": "tsx scripts/import-upstream.ts",
+    "import:sda": "tsx scripts/import-sda-hymnal.ts",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.0",
+    "@hono/swagger-ui": "^0.5.0",
+    "@hono/zod-openapi": "^0.18.0",
+    "better-sqlite3": "^11.0.0",
+    "hono": "^4.6.0",
+    "kysely": "^0.27.0",
+    "zod": "^3.23.0"
+  },
+  "lint-staged": {
+    "*.{ts,json}": [
+      "biome check --write"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.0",
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-istanbul": "^2.0.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
