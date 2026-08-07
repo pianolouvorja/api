@@ -5,6 +5,7 @@ import { seedTestData } from "./helpers/seed.js";
 
 describe("GET /v1/musics", () => {
   beforeAll(() => {
+    process.env.DB_PATH = ":memory:";
     initDb();
     seedTestData();
   });

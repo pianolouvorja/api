@@ -5,6 +5,7 @@ import { seedTestData } from "./helpers/seed.js";
 
 describe("Regressão Endpoints Legados (compat.ts)", () => {
   beforeAll(() => {
+    process.env.DB_PATH = ":memory:";
     initDb();
     seedTestData();
   });

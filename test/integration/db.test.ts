@@ -1,20 +1,14 @@
-import { unlinkSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { closeDb, getDb, initDb } from "../../src/db/connection.js";
 
-const TEST_DB = "./data/test-integration.db";
-
 describe("DB Connection", () => {
   beforeEach(() => {
-    process.env.DB_PATH = TEST_DB;
+    process.env.DB_PATH = ":memory:";
     initDb();
   });
 
   afterEach(() => {
     closeDb();
-    try {
-      unlinkSync(TEST_DB);
-    } catch {}
   });
 
   it("deve conectar no SQLite", () => {

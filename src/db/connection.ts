@@ -10,12 +10,18 @@ let db: Database.Database | null = null;
 export function initDb(): void {
   const dbPath = process.env.DB_PATH ?? "./data/catalog.db";
   // Garantir que o diretorio pai existe (better-sqlite3 nao cria)
-  const dir = dirname(dbPath);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
+  // :memory: DBs nao precisam de diretorio
+  if (dbPath !== ":memory:") {
+    const dir = dirname(dbPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
   }
   db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  // WAL nao funciona com :memory: — usar DELETE mode para testes
+  if (dbPath !== ":memory:") {
+    db.pragma("journal_mode = WAL");
+  }
   db.pragma("foreign_keys = ON");
 
   // Rodar migrations — tentar multiplos caminhos (dev e build)
