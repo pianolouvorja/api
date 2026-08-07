@@ -1,5 +1,5 @@
-import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
 import { getDbStats } from "./db/connection.js";
 import { compatRoutes } from "./routes/compat.js";
@@ -73,8 +73,20 @@ export function createApp() {
     },
   });
 
-  // Interface Swagger UI
-  app.get("/doc", swaggerUI({ url: "/openapi.json" }));
+  // Interface Scalar API Reference (https://scalar.com)
+  app.get(
+    "/doc",
+    apiReference({
+      url: "/openapi.json",
+      pageTitle: "Piano Louvor JA API",
+      theme: "purple",
+      layout: "modern",
+      defaultHttpClient: {
+        targetKey: "js",
+        clientKey: "fetch",
+      },
+    }),
+  );
 
   // Montar rotas compat ao final
   // Bypass temporario de tipagem pro Hono classico
