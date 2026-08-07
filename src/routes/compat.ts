@@ -74,7 +74,7 @@ compatRoutes.get("/json_db", (c) => {
 // ==============================================
 // GET /json_db/:file — router generico que faz parse do filename
 // ==============================================
-compatRoutes.get("/json_db/:file", (c) => {
+compatRoutes.get("/json_db/:file", async (c) => {
   const file = c.req.param("file");
   const db = getDb();
 
@@ -274,7 +274,7 @@ compatRoutes.get("/json_db/:file", (c) => {
   // bible_{version}_{book}_{chapter} — lazy proxy
   const bibleMatch = file.match(/^bible_(\d+)_(\d+)_(\d+)$/);
   if (bibleMatch) {
-    return handleBibleChapter(c, file);
+    return await handleBibleChapter(c, file);
   }
 
   return c.json({ error: "Arquivo nao encontrado!" }, 404);
@@ -423,16 +423,29 @@ function handleAlbumDetail(c: any, db: any, idAlbum: number) {
 // ==============================================
 // Handler: bible chapter (lazy proxy com cache)
 // ==============================================
-function handleBibleChapter(c: any, cacheKey: string) {
+async function handleBibleChapter(c: any, cacheKey: string) {
   mkdirSync(BIBLE_CACHE_DIR, { recursive: true });
   const cacheFile = join(BIBLE_CACHE_DIR, `${cacheKey}.json`);
 
+  // Serve from local cache if available
   if (existsSync(cacheFile)) {
     const cached = readFileSync(cacheFile, "utf-8");
     return c.json(JSON.parse(cached));
   }
 
-  return c.json({ error: "Versiculo nao cacheado." });
+  // Fetch from upstream and cache for next time
+  try {
+    const upstreamUrl = `${UPSTREAM}/json_db/${cacheKey}`;
+    const res = await fetch(upstreamUrl);
+    if (!res.ok) {
+      return c.json({ error: `Upstream returned ${res.status}` }, 502);
+    }
+    const data = await res.text();
+    writeFileSync(cacheFile, data, "utf-8");
+    return c.json(JSON.parse(data));
+  } catch {
+    return c.json({ error: "Failed to fetch chapter from upstream" }, 502);
+  }
 }
 
 // ==============================================
