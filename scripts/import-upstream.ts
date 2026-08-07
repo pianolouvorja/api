@@ -524,17 +524,80 @@ async function importAlbumDetails(lang = "pt") {
 async function importHymnals(lang = "pt") {
   console.log(`\n=== IMPORTANDO HINARIOS (${lang}) ===`);
 
-  // O upstream cria categorias com slug 'hymnal' e 'hymnal_1996' que o app consome
-  // Precisamos garantir que essas categorias existem com type='hymnal'
+  // O upstream serve /json_db/{lang}_hymnal que e a lista de musicas do hinario
+  // Essas musicas pertencem a albums que tem categoria slug='hymnal' no MySQL original
+  // Precisamos criar essas categorias no nosso SQLite e linkar os albums
+
+  // Criar categoria hymnal se nao existir
+  db.prepare(`
+    INSERT OR IGNORE INTO categories (id_category, name, slug, "order", type, id_language)
+    VALUES (100, 'Hinario Adventista', 'hymnal', 0, 'hymnal', ?)
+  `).run(lang);
+
+  db.prepare(`
+    INSERT OR IGNORE INTO categories (id_category, name, slug, "order", type, id_language)
+    VALUES (101, 'Hinario Adventista 1996', 'hymnal_1996', 1, 'hymnal', ?)
+  `).run(lang);
+
+  // Importar pt_hymnal: ja sao as musicas com track do hinario
   const hymnal = await fetchJson(`/json_db/${lang}_hymnal`);
   if (Array.isArray(hymnal)) {
-    console.log(`  pt_hymnal: ${hymnal.length} hinos`);
+    console.log(`  ${lang}_hymnal: ${hymnal.length} hinos`);
+
+    // Linkar cada musica ao album do hinario via categoria hymnal
+    // O hinario adventista e um album so (geralmente id_album do primeiro album da categoria)
+    // Como nao temos o id_album exato do upstream, criar um album virtual
+    db.prepare(`
+      INSERT OR IGNORE INTO albums (id_album, name, id_file_image, color, id_language)
+      VALUES (1000, 'Hinario Adventista', NULL, '#1a472a', ?)
+    `).run(lang);
+
+    db.prepare(`
+      INSERT OR IGNORE INTO categories_albums (id_category, id_album, name, "order", id_language)
+      VALUES (100, 1000, 'Hinario Adventista', 0, ?)
+    `).run(lang);
+
+    // Para cada musica do hinario, garantir track no albums_musics
+    const updateTrack = db.prepare(`
+      UPDATE albums_musics SET track = ? WHERE id_album = 1000 AND id_music = ?
+    `);
+    const insertAlbumMusic = db.prepare(`
+      INSERT OR IGNORE INTO albums_musics (id_album, id_music, track, id_language)
+      VALUES (1000, ?, ?, ?)
+    `);
+
+    for (const h of hymnal) {
+      if (h.id_music && h.track != null) {
+        insertAlbumMusic.run(h.id_music, h.track, lang);
+      }
+    }
   }
 
-  // Tentar hymnal_1996 (pode nao existir em todos idiomas)
+  // Mesma coisa pro hinario 1996
   const hymnal1996 = await fetchJson(`/json_db/${lang}_hymnal_1996`);
   if (Array.isArray(hymnal1996)) {
-    console.log(`  pt_hymnal_1996: ${hymnal1996.length} hinos`);
+    console.log(`  ${lang}_hymnal_1996: ${hymnal1996.length} hinos`);
+
+    db.prepare(`
+      INSERT OR IGNORE INTO albums (id_album, name, id_file_image, color, id_language)
+      VALUES (1001, 'Hinario Adventista 1996', NULL, '#0d3b1f', ?)
+    `).run(lang);
+
+    db.prepare(`
+      INSERT OR IGNORE INTO categories_albums (id_category, id_album, name, "order", id_language)
+      VALUES (101, 1001, 'Hinario Adventista 1996', 1, ?)
+    `).run(lang);
+
+    const insertAlbumMusic1996 = db.prepare(`
+      INSERT OR IGNORE INTO albums_musics (id_album, id_music, track, id_language)
+      VALUES (1001, ?, ?, ?)
+    `);
+
+    for (const h of hymnal1996) {
+      if (h.id_music && h.track != null) {
+        insertAlbumMusic1996.run(h.id_music, h.track, lang);
+      }
+    }
   }
 }
 

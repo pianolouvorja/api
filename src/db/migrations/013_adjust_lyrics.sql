@@ -1,8 +1,10 @@
 -- Migration 013: Ajustar lyrics para importacao do upstream
--- Remover UNIQUE(id_music, order) que quebra importacao de estrofes com ordem duplicada
--- Permitir id_lyric explicito (o upstream ja tem IDs proprios)
+-- Remove UNIQUE(id_music, order) e permite id_lyric explicito
 
--- Criar nova tabela sem a constraint UNIQUE e sem AUTOINCREMENT no id_lyric
+-- Dropar tabela antiga se a nova ja existir (estado intermediario de runs anteriores)
+DROP TABLE IF EXISTS lyrics_new;
+
+-- Criar nova tabela sem AUTOINCREMENT e sem UNIQUE
 CREATE TABLE IF NOT EXISTS lyrics_new (
   id_lyric INTEGER PRIMARY KEY,
   id_music INTEGER NOT NULL,
@@ -19,12 +21,11 @@ CREATE TABLE IF NOT EXISTS lyrics_new (
   FOREIGN KEY (id_file_image) REFERENCES files(id_file)
 );
 
--- Copiar dados existentes
+-- Copiar dados se a tabela antiga existir e tiver dados
 INSERT OR IGNORE INTO lyrics_new SELECT * FROM lyrics;
 
 -- Trocar tabelas
 DROP TABLE IF EXISTS lyrics;
 ALTER TABLE lyrics_new RENAME TO lyrics;
 
--- Criar indice para busca rapida por musica
 CREATE INDEX IF NOT EXISTS idx_lyrics_id_music ON lyrics(id_music);

@@ -10,40 +10,51 @@ describe("Regressão Endpoints Legados (compat.ts)", () => {
     closeDb();
   });
 
-  it("GET /json_db/musics - deve retornar um array bruto de músicas legadas", async () => {
-    const res = await router.request("/json_db/musics?lang=pt");
+  it("GET /json_db/pt_musics - deve retornar array de musicas (formato upstream)", async () => {
+    const res = await router.request("/json_db/pt_musics");
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    // Na API legada, o array está direto na raiz (e sem paginação)
+    // Formato upstream: array direto na raiz
     expect(Array.isArray(body)).toBe(true);
     if (body.length > 0) {
       expect(body[0]).toHaveProperty("id_music");
       expect(body[0]).toHaveProperty("name");
+      expect(body[0]).toHaveProperty("lyric");
+      expect(body[0]).toHaveProperty("albums");
     }
   });
 
-  it("GET /pt/musics - deve retornar estrutura aninhada antiga", async () => {
-    const res = await router.request("/pt/musics");
+  it("GET /json_db/pt_categories - deve retornar categorias com albums aninhados", async () => {
+    const res = await router.request("/json_db/pt_categories");
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    // Rota de app antigo: devolve paginação ou objeto data
-    expect(body).toHaveProperty("data");
-    expect(Array.isArray(body.data)).toBe(true);
+    expect(Array.isArray(body)).toBe(true);
+    if (body.length > 0) {
+      expect(body[0]).toHaveProperty("id_category");
+      expect(body[0]).toHaveProperty("albums");
+    }
   });
 
-  it("GET /pt/albums - deve retornar albums na rota legada", async () => {
-    const res = await router.request("/pt/albums");
+  it("GET /json_db/music_1 - deve retornar detalhe de musica com estrofes", async () => {
+    const res = await router.request("/json_db/music_1");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("data");
+
+    expect(body).toHaveProperty("id_music");
+    expect(body).toHaveProperty("lyric");
+    expect(body).toHaveProperty("url_music");
+    expect(Array.isArray(body.lyric)).toBe(true);
   });
 
-  it("GET /pt/categories - deve retornar categories na rota legada", async () => {
-    const res = await router.request("/pt/categories");
+  it("GET /json_db/album_1 - deve retornar album com musicas", async () => {
+    const res = await router.request("/json_db/album_1");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toHaveProperty("data");
+
+    expect(body).toHaveProperty("id_album");
+    expect(body).toHaveProperty("musics");
+    expect(Array.isArray(body.musics)).toBe(true);
   });
 });
