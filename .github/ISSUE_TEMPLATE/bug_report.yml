@@ -1,0 +1,58 @@
+name: Bug Report
+description: Reporta um bug no API
+labels: ["bug", "triage"]
+body:
+  - type: textarea
+    id: descricao
+    attributes:
+      label: Descrição do bug
+      description: O que aconteceu? Seja específico.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducao
+    attributes:
+      label: Passos para reproduzir
+      placeholder: |
+        1. Abri o app em...
+        2. Cliquei em...
+        3. Vi que...
+    validations:
+      required: true
+  - type: dropdown
+    id: prioridade
+    attributes:
+      label: Prioridade
+      options:
+        - P0 — Crítico (não funciona)
+        - P1 — Alto (funciona mas quebra UX)
+        - P2 — Médio (workaround existe)
+        - P3 — Baixo (cosmético)
+    validations:
+      required: true
+  - type: textarea
+    id: ambiente
+    attributes:
+      label: Ambiente
+      placeholder: Sistema operacional, navegador, versão, etc
+    validations:
+      required: true
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo afetado
+      options:
+        - Router / Navegação
+        - Liturgia
+        - Bíblia
+        - Álbuns / Hinos
+        - Mídia / Player
+        - Settings / Aparência
+        - Design System
+        - Endpoints REST
+        - Database/SQLite
+        - Infra/Docker
+        - Infra / Deploy
+        - Outro
+    validations:
+      required: false
