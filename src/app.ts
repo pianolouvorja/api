@@ -17,6 +17,10 @@ export function createApp() {
   const app = new OpenAPIHono();
 
   app.use("*", cors());
+  app.onError((error, c) => {
+    console.error(error);
+    return c.json({ error: "Erro interno" }, 500);
+  });
 
   const healthRoute = createRoute({
     method: "get",
