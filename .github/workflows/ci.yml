@@ -41,6 +41,7 @@ jobs:
         with:
           node-version: 22
       - run: npm ci
+      - run: mkdir -p data
       - run: npm run test:coverage
       - uses: actions/upload-artifact@v4
         with:
