@@ -42,6 +42,8 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: mkdir -p data
+      - name: Seed catálogo de integração
+        run: npm run import:upstream
       - run: npm run test:coverage
       - uses: actions/upload-artifact@v4
         with:
