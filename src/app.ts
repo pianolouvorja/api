@@ -8,6 +8,7 @@ import { bibleRoutes } from "./v1/bible/bible.routes.js";
 import { categoriesRoutes } from "./v1/categories/categories.routes.js";
 // Rotas OpenAPI (V1)
 import { musicsRoutes } from "./v1/musics/musics.routes.js";
+import { remoteRoutes } from "./v1/remote/remote.routes.js";
 
 // Rotas compativeis (nao-OpenAPI)
 
@@ -61,6 +62,7 @@ export function createApp() {
   app.route("/", compatRoutes);
 
   app.route("/v1/bible", bibleRoutes);
+  app.route("/v1/remote", remoteRoutes);
 
   // Registrar especificacao OpenAPI
   app.doc("/openapi.json", {
