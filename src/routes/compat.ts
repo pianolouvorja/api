@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Hono } from "hono";
 import { getDb } from "../db/connection.js";
+import { fetchUpstream } from "../lib/upstream.js";
 
 export const compatRoutes = new Hono();
 
@@ -433,13 +434,10 @@ async function handleBibleChapter(c: any, cacheKey: string) {
     return c.json(JSON.parse(cached));
   }
 
-  // Fetch from upstream and cache for next time
+  // Fetch from upstream (rate-limited, com retry em 429/5xx) e cacheia
   try {
     const upstreamUrl = `${UPSTREAM}/json_db/${cacheKey}`;
-    const res = await fetch(upstreamUrl);
-    if (!res.ok) {
-      return c.json({ error: `Upstream returned ${res.status}` }, 502);
-    }
+    const res = await fetchUpstream(upstreamUrl);
     const data = await res.text();
     writeFileSync(cacheFile, data, "utf-8");
     return c.json(JSON.parse(data));
