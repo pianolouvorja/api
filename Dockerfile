@@ -11,6 +11,7 @@ RUN npm run build
 FROM node:22-slim
 WORKDIR /app
 COPY package*.json ./
+ENV NODE_ENV=production
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data media
