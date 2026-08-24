@@ -42,3 +42,4 @@ done <<< "$PAIRS"
 echo "=== Concluido: ok=$ok skip=$skip fail=$fail ==="
 du -sh "$CACHE"
 [[ $fail -gt 0 ]] && { echo "Falhas em $FAILLOG"; exit 1; }
+exit 0
