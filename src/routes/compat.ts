@@ -467,8 +467,11 @@ const MIRROR_ENABLED = process.env.MEDIA_MIRROR !== "off";
 
 compatRoutes.get("/file/:path{.*}", async (c) => {
   const path = c.req.param("path");
-  const safePath = path.replace(/\.\./g, ""); // block traversal
-  const localPath = join(MEDIA_DIR, safePath);
+  // RF-06: bloqueio explícito de path traversal e paths absolutos
+  if (path.includes("..") || path.startsWith("/")) {
+    return c.json({ error: "Invalid path" }, 400);
+  }
+  const localPath = join(MEDIA_DIR, path);
   const upstreamUrl = `${UPSTREAM}/file/${path}`;
 
   // 1. Serve do disco se ja existe no mirror

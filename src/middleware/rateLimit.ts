@@ -112,6 +112,25 @@ function getClientIp(c: Context): string {
   return c.req.header("x-real-ip") ?? "unknown";
 }
 
+/**
+ * RF-05: extração de IP segura contra spoofing de X-Forwarded-For.
+ * Só confia no header quando TRUSTED_PROXY=true (ex: atrás de Cloudflare Tunnel).
+ * Sem proxy confiável, qualquer cliente pode forjar o header pra burlar o bucket.
+ */
+export function getClientIpSafe(
+  c: Context,
+  opts: { TRUSTED_PROXY: string | boolean },
+): string {
+  const trusted = opts.TRUSTED_PROXY === true || opts.TRUSTED_PROXY === "true";
+  if (trusted) {
+    const fwd = c.req.header("x-forwarded-for");
+    if (fwd) return (fwd.split(",")[0] ?? "").trim();
+    const real = c.req.header("x-real-ip");
+    if (real) return real;
+  }
+  return "unknown";
+}
+
 export async function rateLimit(
   c: Context,
   next: Next,
@@ -124,7 +143,7 @@ export async function rateLimit(
   const maxTokens = resolveMaxTokens(bucket);
   const burst = resolveBurst(bucket);
 
-  const key = `rate_limit:${bucket}:${getClientIp(c)}`;
+  const key = `rate_limit:${bucket}:${getClientIpSafe(c, { TRUSTED_PROXY: process.env.TRUSTED_PROXY ?? "false" })}`;
   const prev = state.get(key) ?? { tokens: burst, lastRefill: now };
 
   // Refill: adiciona tokens com base no tempo decorrido
