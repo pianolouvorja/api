@@ -58,3 +58,42 @@ jobs:
           context: .
           push: false
           tags: piano-api:latest
+
+  smoke:
+    name: Docker Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: piano-api:smoke
+          load: true
+      - name: Run container and check /v1/health
+        run: |
+          docker run -d --rm --name smoke -p 3100:3100 piano-api:smoke
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:3100/v1/health > /dev/null 2>&1; then
+              echo "✅ health check OK"
+              docker stop smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::/v1/health não respondeu em 30s"
+          docker logs smoke
+          docker stop smoke || true
+          exit 1
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high

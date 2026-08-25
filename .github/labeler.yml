@@ -1,0 +1,43 @@
+# Mapeamento: path do arquivo → label aplicada automaticamente no PR
+
+modulo:v1-musics:
+  - changed-files:
+    - any-glob-to-any-file: src/v1/musics/**
+
+modulo:v1-albums:
+  - changed-files:
+    - any-glob-to-any-file: src/v1/albums/**
+
+modulo:v1-categories:
+  - changed-files:
+    - any-glob-to-any-file: src/v1/categories/**
+
+modulo:v1-bible:
+  - changed-files:
+    - any-glob-to-any-file: src/v1/bible/**
+
+modulo:v1-remote:
+  - changed-files:
+    - any-glob-to-any-file: src/v1/remote/**
+
+modulo:compat:
+  - changed-files:
+    - any-glob-to-any-file: src/routes/compat.ts
+
+modulo:db:
+  - changed-files:
+    - any-glob-to-any-file: src/db/**
+
+modulo:infra:
+  - changed-files:
+    - any-glob-to-any-file: Dockerfile
+    - any-glob-to-any-file: .github/**
+    - any-glob-to-any-file: docker-compose*.yml
+    - any-glob-to-any-file: package.json
+    - any-glob-to-any-file: tsconfig*.json
+    - any-glob-to-any-file: vitest.config.*
+
+modulo:docs:
+  - changed-files:
+    - any-glob-to-any-file: "**/*.md"
+    - any-glob-to-any-file: docs/**
