@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import router from "../../src/app.js";
 import { closeDb, initDb } from "../../src/db/connection.js";
+import { seedTestCatalog } from "../helpers/seed.js";
 
 describe("Regressão Endpoints Legados (compat.ts)", () => {
   beforeAll(() => {
     initDb();
+    seedTestCatalog();
   });
   afterAll(() => {
     closeDb();
