@@ -1,21 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import router from "../../src/app.js";
-import { closeDb, initDb } from "../../src/db/connection.js";
+import { setupSeededDb } from "../helpers/seeded-db.js";
 
 describe("GET /v1/musics", () => {
-  beforeAll(() => {
-    initDb();
+  let router: any;
+  let cleanup: () => void;
+
+  beforeAll(async () => {
+    ({ router, cleanup } = await setupSeededDb());
   });
-  afterAll(() => {
-    closeDb();
-  });
+  afterAll(() => cleanup());
 
   it("deve retornar uma lista de músicas com paginação para pt", async () => {
     const res = await router.request("/v1/musics?lang=pt&page=1&per_page=5");
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    // Formato novo: { data: [...], meta: { total, per_page, current_page, last_page } }
     expect(body).toHaveProperty("data");
     expect(body).toHaveProperty("meta");
     expect(body.meta).toHaveProperty("current_page", 1);
@@ -23,18 +22,16 @@ describe("GET /v1/musics", () => {
     expect(body.meta).toHaveProperty("total");
     expect(Array.isArray(body.data)).toBe(true);
     expect(body.data.length).toBeLessThanOrEqual(5);
+    expect(body.data.length).toBeGreaterThan(0);
 
-    if (body.data.length > 0) {
-      // Shape de paridade com upstream
-      expect(body.data[0]).toHaveProperty("id_music");
-      expect(body.data[0]).toHaveProperty("name");
-      expect(body.data[0]).toHaveProperty("has_instrumental_music");
-      expect(body.data[0]).toHaveProperty("duration");
-      expect(body.data[0]).toHaveProperty("lyric");
-      expect(body.data[0]).toHaveProperty("albums_names");
-      expect(body.data[0]).toHaveProperty("albums");
-      expect(Array.isArray(body.data[0].albums)).toBe(true);
-    }
+    expect(body.data[0]).toHaveProperty("id_music");
+    expect(body.data[0]).toHaveProperty("name");
+    expect(body.data[0]).toHaveProperty("has_instrumental_music");
+    expect(body.data[0]).toHaveProperty("duration");
+    expect(body.data[0]).toHaveProperty("lyric");
+    expect(body.data[0]).toHaveProperty("albums_names");
+    expect(body.data[0]).toHaveProperty("albums");
+    expect(Array.isArray(body.data[0].albums)).toBe(true);
   });
 
   it("deve retornar uma música específica pelo ID com letras", async () => {
@@ -48,16 +45,14 @@ describe("GET /v1/musics", () => {
     expect(body).toHaveProperty("url_image");
     expect(body).toHaveProperty("url_music");
     expect(body).toHaveProperty("lyric");
-    // No detalhe, lyric e array de estrofes
     expect(Array.isArray(body.lyric)).toBe(true);
+    expect(body.lyric.length).toBeGreaterThan(0);
 
-    if (body.lyric.length > 0) {
-      expect(body.lyric[0]).toHaveProperty("id_lyric");
-      expect(body.lyric[0]).toHaveProperty("lyric");
-      expect(body.lyric[0]).toHaveProperty("time");
-      expect(body.lyric[0]).toHaveProperty("show_slide");
-      expect(body.lyric[0]).toHaveProperty("order");
-    }
+    expect(body.lyric[0]).toHaveProperty("id_lyric");
+    expect(body.lyric[0]).toHaveProperty("lyric");
+    expect(body.lyric[0]).toHaveProperty("time");
+    expect(body.lyric[0]).toHaveProperty("show_slide");
+    expect(body.lyric[0]).toHaveProperty("order");
   });
 
   it("deve retornar 404 para uma música inexistente", async () => {
