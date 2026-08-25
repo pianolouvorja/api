@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 // DB temporario dedicado ANTES de qualquer import do app
 const tmpDir = mkdtempSync(join(tmpdir(), "piano-seeded-"));
+const originalDbPath = process.env.DB_PATH;
 process.env.DB_PATH = join(tmpDir, "test.db");
 process.env.PORT = "0";
 
@@ -85,6 +86,8 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  if (originalDbPath === undefined) delete process.env.DB_PATH;
+  else process.env.DB_PATH = originalDbPath;
   rmSync(tmpDir, { recursive: true, force: true });
   vi.unstubAllGlobals();
 });
