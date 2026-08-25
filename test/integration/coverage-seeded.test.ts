@@ -9,7 +9,7 @@ const originalDbPath = process.env.DB_PATH;
 process.env.DB_PATH = join(tmpDir, "test.db");
 process.env.PORT = "0";
 
-const { initDb, getDb } = await import("../../src/db/connection.js");
+const { initDb, getDb, closeDb } = await import("../../src/db/connection.js");
 
 let router: any;
 
@@ -86,6 +86,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  closeDb();
   if (originalDbPath === undefined) delete process.env.DB_PATH;
   else process.env.DB_PATH = originalDbPath;
   rmSync(tmpDir, { recursive: true, force: true });
