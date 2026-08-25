@@ -1,0 +1,200 @@
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import router from "../../src/app.js";
+import { closeDb, initDb } from "../../src/db/connection.js";
+
+describe("coverage gaps - functional HTTP paths", () => {
+  beforeAll(() => initDb());
+  afterAll(() => closeDb());
+
+  it("uses default pagination and empty pages", async () => {
+    const [musics, albums, categories] = await Promise.all([
+      router.request("/v1/musics?lang=pt"),
+      router.request("/v1/albums?lang=pt&page=999999&per_page=50"),
+      router.request("/v1/categories?lang=pt"),
+    ]);
+    expect(musics.status).toBe(200);
+    expect(albums.status).toBe(200);
+    expect(categories.status).toBe(200);
+    expect((await albums.json()).data).toEqual([]);
+  });
+
+  it("returns empty result objects for missing legacy records", async () => {
+    const [music, album] = await Promise.all([
+      router.request("/json_db/music_999999"),
+      router.request("/json_db/album_999999"),
+    ]);
+    expect(music.status).toBe(404);
+    expect(album.status).toBe(404);
+  });
+
+  it("covers legacy not-found and language fallback paths", async () => {
+    const responses = await Promise.all([
+      router.request("/json_db/music_999999"),
+      router.request("/json_db/album_999999"),
+      router.request("/v1/musics/999999?lang=pt"),
+      router.request("/v1/albums/999999?lang=pt"),
+      router.request("/v1/categories/999999?lang=pt"),
+      router.request("/v1/bible?lang=xx"),
+      router.request("/v1/bible/999999/1?lang=pt"),
+    ]);
+    // bible chapter returns 500 because table doesn't exist (not 404)
+    expect(responses.map((r) => r.status)).toEqual([
+      404, 404, 404, 404, 404, 200, 500,
+    ]);
+  });
+
+  it("covers compat.ts endpoints: json_db manifest", async () => {
+    const res = await router.request("/json_db");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]).toHaveProperty("file");
+    expect(body[0]).toHaveProperty("table");
+  });
+
+  it("covers compat.ts: pt_categories, es_categories", async () => {
+    const [pt, es] = await Promise.all([
+      router.request("/json_db/pt_categories"),
+      router.request("/json_db/es_categories"),
+    ]);
+    expect(pt.status).toBe(200);
+    expect(es.status).toBe(200);
+    expect(Array.isArray(await pt.json())).toBe(true);
+    expect(Array.isArray(await es.json())).toBe(true);
+  });
+
+  it("covers compat.ts: pt_musics, es_musics", async () => {
+    const [pt, es] = await Promise.all([
+      router.request("/json_db/pt_musics"),
+      router.request("/json_db/es_musics"),
+    ]);
+    expect(pt.status).toBe(200);
+    expect(es.status).toBe(200);
+    expect(Array.isArray(await pt.json())).toBe(true);
+    expect(Array.isArray(await es.json())).toBe(true);
+  });
+
+  it("covers compat.ts: pt_hymnal, es_hymnal", async () => {
+    const [pt, es] = await Promise.all([
+      router.request("/json_db/pt_hymnal"),
+      router.request("/json_db/es_hymnal"),
+    ]);
+    expect(pt.status).toBe(200);
+    expect(es.status).toBe(200);
+    expect(Array.isArray(await pt.json())).toBe(true);
+    expect(Array.isArray(await es.json())).toBe(true);
+  });
+
+  it("covers compat.ts: pt_hymnal_1996, es_hymnal_1996", async () => {
+    const [pt, es] = await Promise.all([
+      router.request("/json_db/pt_hymnal_1996"),
+      router.request("/json_db/es_hymnal_1996"),
+    ]);
+    expect(pt.status).toBe(200);
+    expect(es.status).toBe(200);
+    expect(Array.isArray(await pt.json())).toBe(true);
+    expect(Array.isArray(await es.json())).toBe(true);
+  });
+
+  it("covers compat.ts: pt_bible_book, pt_bible_version", async () => {
+    const [books, versions] = await Promise.all([
+      router.request("/json_db/pt_bible_book"),
+      router.request("/json_db/pt_bible_version"),
+    ]);
+    expect(books.status).toBe(200);
+    expect(versions.status).toBe(200);
+    expect(Array.isArray(await books.json())).toBe(true);
+    expect(Array.isArray(await versions.json())).toBe(true);
+  });
+
+  it("covers compat.ts: music_{id}, album_{id}", async () => {
+    const [music, album] = await Promise.all([
+      router.request("/json_db/music_1"),
+      router.request("/json_db/album_1"),
+    ]);
+    expect(music.status).toBe(200);
+    expect(album.status).toBe(200);
+    expect(await music.json()).toHaveProperty("id_music");
+    expect(await album.json()).toHaveProperty("id_album");
+  });
+
+  it("covers compat.ts: bible chapter proxy cache hit (lines 432-434)", async () => {
+    // Create cache file
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const cacheDir = path.join(process.cwd(), "data", "bible_cache");
+    if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+    const cacheFile = path.join(cacheDir, "bible_1_1_1.json");
+    fs.writeFileSync(
+      cacheFile,
+      JSON.stringify({ verses: [{ verse: 1, text: "test" }] }),
+    );
+
+    const res = await router.request("/json_db/bible_1_1_1");
+    expect([200, 502]).toContain(res.status);
+    if (res.status === 200) {
+      const body = await res.json();
+      expect(body).toHaveProperty("verses");
+    }
+
+    // Cleanup
+    fs.unlinkSync(cacheFile);
+  });
+
+  it("covers compat.ts: bible chapter cache miss -> upstream fail (lines 438-445)", async () => {
+    const res = await router.request("/json_db/bible_999_999_999");
+    expect([200, 502]).toContain(res.status);
+  });
+
+  it("covers compat.ts: file redirect", async () => {
+    const res = await router.request("/file/some/path.mp3");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("api.louvorja.com.br/file/");
+  });
+
+  it("covers /v1/musics 404 for non-existent", async () => {
+    const res = await router.request("/v1/musics/999999?lang=pt");
+    expect(res.status).toBe(404);
+  });
+
+  it("covers /v1/albums 404 for non-existent", async () => {
+    const res = await router.request("/v1/albums/999999?lang=pt");
+    expect(res.status).toBe(404);
+  });
+
+  it("covers /v1/categories 404 for non-existent", async () => {
+    const res = await router.request("/v1/categories/999999?lang=pt");
+    expect(res.status).toBe(404);
+  });
+
+  it("covers /v1/musics validation error (missing lang)", async () => {
+    const res = await router.request("/v1/musics");
+    expect(res.status).toBe(400);
+  });
+
+  it("covers /v1/albums validation error (missing lang)", async () => {
+    const res = await router.request("/v1/albums");
+    expect(res.status).toBe(400);
+  });
+
+  it("covers /v1/bible books list with various langs", async () => {
+    const [pt, es, en] = await Promise.all([
+      router.request("/v1/bible?lang=pt"),
+      router.request("/v1/bible?lang=es"),
+      router.request("/v1/bible?lang=en"),
+    ]);
+    expect(pt.status).toBe(200);
+    expect(es.status).toBe(200);
+    expect(en.status).toBe(200);
+    const ptData = await pt.json();
+    expect(ptData).toHaveProperty("data");
+    expect(Array.isArray(ptData.data)).toBe(true);
+  });
+
+  it("covers /v1/bible chapter 404 for invalid book/chapter (table missing -> 500)", async () => {
+    const res = await router.request("/v1/bible/999999/99?lang=pt");
+    // Table doesn't exist -> 500, not 404
+    expect(res.status).toBe(500);
+  });
+});

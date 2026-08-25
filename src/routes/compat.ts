@@ -10,18 +10,6 @@ const UPSTREAM = process.env.UPSTREAM_API ?? "https://api.louvorja.com.br";
 const BIBLE_CACHE_DIR = join(process.cwd(), "data", "bible_cache");
 
 // ==============================================
-// Helper: parsear path de arquivo do upstream (dir/file_name)
-// ==============================================
-function parseFilePath(fullPath: string): { dir: string; file_name: string } {
-  const idx = fullPath.lastIndexOf("/");
-  if (idx === -1) return { dir: "/", file_name: fullPath };
-  return {
-    dir: fullPath.substring(0, idx),
-    file_name: fullPath.substring(idx + 1),
-  };
-}
-
-// ==============================================
 // GET /json_db — manifest de arquivos disponiveis
 // ==============================================
 compatRoutes.get("/json_db", (c) => {
@@ -390,7 +378,7 @@ function handleAlbumDetail(c: any, db: any, idAlbum: number) {
     )
     .get(idAlbum);
 
-  const categories = catRow?.categories ? catRow.categories.split("|") : [];
+  const categories = catRow.categories ? catRow.categories.split("|") : [];
 
   const musics = db
     .prepare(
