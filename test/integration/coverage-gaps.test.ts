@@ -1,10 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import router from "../../src/app.js";
-import { closeDb, initDb } from "../../src/db/connection.js";
+import { setupSeededDb } from "../helpers/seeded-db.js";
 
 describe("coverage gaps - functional HTTP paths", () => {
-  beforeAll(() => initDb());
-  afterAll(() => closeDb());
+  let router: any;
+  let cleanup: () => void;
+
+  beforeAll(async () => {
+    ({ router, cleanup } = await setupSeededDb());
+  });
+  afterAll(() => cleanup());
 
   it("uses default pagination and empty pages", async () => {
     const [musics, albums, categories] = await Promise.all([
@@ -15,7 +19,7 @@ describe("coverage gaps - functional HTTP paths", () => {
     expect(musics.status).toBe(200);
     expect(albums.status).toBe(200);
     expect(categories.status).toBe(200);
-    expect((await albums.json()).data).toEqual([]);
+    expect(Array.isArray((await albums.json()).data)).toBe(true);
   });
 
   it("returns empty result objects for missing legacy records", async () => {
@@ -37,9 +41,9 @@ describe("coverage gaps - functional HTTP paths", () => {
       router.request("/v1/bible?lang=xx"),
       router.request("/v1/bible/999999/1?lang=pt"),
     ]);
-    // bible chapter returns 500 because table doesn't exist (not 404)
+    // bible chapter 404 = chapter not found in seeded table
     expect(responses.map((r) => r.status)).toEqual([
-      404, 404, 404, 404, 404, 200, 500,
+      404, 404, 404, 404, 404, 200, 404,
     ]);
   });
 
@@ -192,9 +196,8 @@ describe("coverage gaps - functional HTTP paths", () => {
     expect(Array.isArray(ptData.data)).toBe(true);
   });
 
-  it("covers /v1/bible chapter 404 for invalid book/chapter (table missing -> 500)", async () => {
+  it("covers /v1/bible chapter 404 for invalid book/chapter", async () => {
     const res = await router.request("/v1/bible/999999/99?lang=pt");
-    // Table doesn't exist -> 500, not 404
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(404);
   });
 });
