@@ -1,5 +1,12 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
+import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { getDb } from "../db/connection.js";
 
@@ -8,9 +15,6 @@ export const compatRoutes = new Hono();
 const UPSTREAM = process.env.UPSTREAM_API ?? "https://api.louvorja.com.br";
 const BIBLE_CACHE_DIR = join(process.cwd(), "data", "bible_cache");
 
-// ==============================================
-// Helper: parsear path de arquivo do upstream (dir/file_name)
-// ==============================================
 function parseFilePath(fullPath: string): { dir: string; file_name: string } {
   const idx = fullPath.lastIndexOf("/");
   if (idx === -1) return { dir: "/", file_name: fullPath };
@@ -449,10 +453,87 @@ async function handleBibleChapter(c: any, cacheKey: string) {
 }
 
 // ==============================================
-// GET /file/:path* — serve imagens e MP3 (redirect pro upstream)
+// GET /file/:path* — serve midias LOCAIS (media/) com mirror on-demand.
+// Ordem: 1) arquivo local existe -> serve do disco
+//        2) nao existe -> baixa do upstream, salva em media/ e serve (cache transparente)
+//        3) upstream falhou -> 302 redirect (fallback) ou 502
 // ==============================================
-compatRoutes.get("/file/:path{.*}", (c) => {
+import { createWriteStream } from "node:fs";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+
+const MEDIA_DIR = join(process.cwd(), "media");
+const MIRROR_ENABLED = process.env.MEDIA_MIRROR !== "off";
+
+compatRoutes.get("/file/:path{.*}", async (c) => {
   const path = c.req.param("path");
-  const url = `${UPSTREAM}/file/${path}`;
-  return c.redirect(url, 302);
+  const safePath = path.replace(/\.\./g, ""); // block traversal
+  const localPath = join(MEDIA_DIR, safePath);
+  const upstreamUrl = `${UPSTREAM}/file/${path}`;
+
+  // 1. Serve do disco se ja existe no mirror
+  if (existsSync(localPath)) {
+    const ext = localPath.split(".").pop()?.toLowerCase() ?? "";
+    const mime =
+      ext === "mp3"
+        ? "audio/mpeg"
+        : ext === "bmp"
+          ? "image/bmp"
+          : ext === "jpg" || ext === "jpeg"
+            ? "image/jpeg"
+            : ext === "png"
+              ? "image/png"
+              : "application/octet-stream";
+    const fileStat = await fsStat(localPath);
+    // Range requests (seek de audio)
+    const range = c.req.header("range");
+    if (range) {
+      const m = range.match(/bytes=(\d+)-(\d*)/);
+      if (m) {
+        const start = Number(m[1]);
+        const end = m[2] ? Number(m[2]) : fileStat.size - 1;
+        const node = await fsReadFile(localPath);
+        const chunk = node.subarray(start, end + 1);
+        return c.body(chunk, 206, {
+          "Content-Type": mime,
+          "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
+          "Accept-Ranges": "bytes",
+          "Content-Length": String(chunk.length),
+        });
+      }
+    }
+    return c.body(await fsReadFile(localPath), 200, {
+      "Content-Type": mime,
+      "Content-Length": String(fileStat.size),
+      "Accept-Ranges": "bytes",
+    });
+  }
+
+  // 2. Mirror on-demand: baixa, salva e serve
+  if (MIRROR_ENABLED) {
+    try {
+      const res = await fetch(upstreamUrl);
+      if (res.ok && res.body) {
+        mkdirSync(dirname(localPath), { recursive: true });
+        const tmp = `${localPath}.tmp`;
+        await pipeline(
+          Readable.fromWeb(res.body as any),
+          createWriteStream(tmp),
+        );
+        renameSync(tmp, localPath);
+        const buf = await fsReadFile(localPath);
+        return c.body(buf, 200, {
+          "Content-Type":
+            res.headers.get("content-type") ?? "application/octet-stream",
+          "Content-Length": String(buf.length),
+          "Accept-Ranges": "bytes",
+        });
+      }
+    } catch {
+      // fallback abaixo
+    }
+  }
+
+  // 3. Fallback: redirect pro upstream
+  return c.redirect(upstreamUrl, 302);
 });

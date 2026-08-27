@@ -1,20 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import router from "../../src/app.js";
-import {
-  closeIsolatedDb,
-  openIsolatedDb,
-  seedMinimalCatalog,
-} from "../helpers/catalog.js";
+import { closeDb, initDb } from "../../src/db/connection.js";
+import { seedTestData } from "./helpers/seed.js";
 
 describe("GET /v1/musics", () => {
-  let dbPath: string;
-
   beforeAll(() => {
-    dbPath = openIsolatedDb("v1-musics");
-    seedMinimalCatalog();
+    process.env.DB_PATH = ":memory:";
+    initDb();
+    seedTestData();
   });
   afterAll(() => {
-    closeIsolatedDb(dbPath);
+    closeDb();
   });
 
   it("deve retornar uma lista de músicas com paginação para pt", async () => {

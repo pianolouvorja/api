@@ -1,16 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { getDb } from "../../src/db/connection.js";
-import { closeIsolatedDb, openIsolatedDb } from "../helpers/catalog.js";
+import { closeDb, getDb, initDb } from "../../src/db/connection.js";
 
 describe("DB Connection", () => {
-  let dbPath: string;
-
   beforeEach(() => {
-    dbPath = openIsolatedDb("integration");
+    process.env.DB_PATH = ":memory:";
+    initDb();
   });
 
   afterEach(() => {
-    closeIsolatedDb(dbPath);
+    closeDb();
   });
 
   it("deve conectar no SQLite", () => {

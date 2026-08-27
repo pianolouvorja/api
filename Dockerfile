@@ -1,21 +1,19 @@
 # Build stage
 FROM node:22-slim AS builder
 WORKDIR /app
-ENV HUSKY=0
 COPY package*.json ./
 RUN npm ci
 COPY tsconfig*.json ./
 COPY src/ ./src/
 RUN npm run build
+# Prune devDependencies, keep compiled native modules (better-sqlite3)
+RUN npm prune --omit=dev
 
 # Runtime stage
 FROM node:22-slim
 WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
 COPY package*.json ./
-# husky é devDependency: o script prepare quebraria o npm ci --omit=dev
-RUN npm pkg delete scripts.prepare \
-  && npm ci --omit=dev \
-  && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data media
 EXPOSE 3100
