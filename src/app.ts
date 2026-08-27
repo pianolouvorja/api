@@ -2,6 +2,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
 import { getDbStats } from "./db/connection.js";
+import { rateLimit } from "./middleware/rateLimit.js";
 import { compatRoutes } from "./routes/compat.js";
 import { albumsRoutes } from "./v1/albums/albums.routes.js";
 import { bibleRoutes } from "./v1/bible/bible.routes.js";
@@ -17,6 +18,8 @@ export function createApp() {
   const app = new OpenAPIHono();
 
   app.use("*", cors());
+  // Rate limiting Token Bucket (boas práticas louvorja/api)
+  app.use("*", rateLimit);
   app.onError((error, c) => {
     console.error(error);
     return c.json({ error: "Erro interno" }, 500);

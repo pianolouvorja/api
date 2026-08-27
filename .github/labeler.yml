@@ -1,0 +1,50 @@
+# Mapeamento: path do arquivo -> label aplicada automaticamente no PR
+# Padrao da org pianolouvorja — labels alinhadas com modulos da API
+
+modulo:routes:
+  - changed-files:
+    - any-glob-to-any-file: src/routes/**
+    - any-glob-to-any-file: src/v1/**
+
+modulo:db:
+  - changed-files:
+    - any-glob-to-any-file: src/db/**
+    - any-glob-to-any-file: src/db/migrations/**
+
+modulo:infra:
+  - changed-files:
+    - any-glob-to-any-file: Dockerfile
+    - any-glob-to-any-file: docker-compose*
+    - any-glob-to-any-file: .github/workflows/**
+    - any-glob-to-any-file: tsconfig*.json
+    - any-glob-to-any-file: package.json
+    - any-glob-to-any-file: .env*
+
+modulo:import:
+  - changed-files:
+    - any-glob-to-any-file: scripts/**
+
+modulo:docs:
+  - changed-files:
+    - any-glob-to-any-file: "**/*.md"
+    - any-glob-to-any-file: docs/**
+
+modulo:compat:
+  - changed-files:
+    - any-glob-to-any-file: src/routes/compat.ts
+
+modulo:openapi:
+  - changed-files:
+    - any-glob-to-any-file: src/app.ts
+    - any-glob-to-any-file: src/openapi/**
+
+modulo:test:
+  - changed-files:
+    - any-glob-to-any-file: test/**
+    - any-glob-to-any-file: "**/*.test.ts"
+    - any-glob-to-any-file: "**/*.spec.ts"
+
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file: package-lock.json
+    - any-glob-to-any-file: package.json
