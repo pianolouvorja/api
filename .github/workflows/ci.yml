@@ -53,6 +53,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: mkdir -p data
       - run: npm run test:coverage
       - uses: actions/upload-artifact@v4
         with:
