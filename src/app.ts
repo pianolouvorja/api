@@ -3,6 +3,7 @@ import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import { getDbStats } from "./db/connection.js";
+import { APP_VERSION } from "./lib/version.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { compatRoutes } from "./routes/compat.js";
 import { albumsRoutes } from "./v1/albums/albums.routes.js";
@@ -75,7 +76,7 @@ export function createApp() {
     return c.json(
       {
         status: "ok",
-        version: "0.1.0",
+        version: APP_VERSION,
         uptime: Math.floor(process.uptime()),
         db_size: stats.sizeBytes,
         tables: stats.tableCount,
@@ -97,7 +98,7 @@ export function createApp() {
   app.doc("/openapi.json", {
     openapi: "3.0.0",
     info: {
-      version: "0.1.0",
+      version: APP_VERSION,
       title: "Piano Louvor JA API",
       description:
         "API propria drop-in replacement para api.louvorja.com.br.\n\nFornece catalogo de musicas, hinos, albuns, categorias e biblia.\n\n**Endpoints de compatibilidade** (`/json_db/*`, `/file/*`, `/db/*`) nao aparecem nesta documentacao pois usam path matching dinamico.",

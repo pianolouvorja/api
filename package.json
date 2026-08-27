@@ -17,6 +17,12 @@
     "validate:pr": "biome check src/ test/ && tsc -p tsconfig.test.json --noEmit && vitest run",
     "import:upstream": "tsx scripts/import-upstream.ts",
     "import:sda": "tsx scripts/import-sda-hymnal.ts",
+    "version:major": "npm version major -m \"chore: versão %s\"",
+    "version:minor": "npm version minor -m \"chore: versão %s\"",
+    "version:patch": "npm version patch -m \"chore: versão %s\"",
+    "version:max": "npm run version:major",
+    "version:min": "npm run version:minor",
+    "version:bug": "npm run version:patch",
     "prepare": "[ \"$NODE_ENV\" = production ] || husky"
   },
   "dependencies": {
