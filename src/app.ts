@@ -1,7 +1,9 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { getDbStats } from "./db/connection.js";
+import { rateLimit } from "./middleware/rateLimit.js";
 import { compatRoutes } from "./routes/compat.js";
 import { albumsRoutes } from "./v1/albums/albums.routes.js";
 import { bibleRoutes } from "./v1/bible/bible.routes.js";
@@ -16,7 +18,34 @@ import { createRoute, z } from "@hono/zod-openapi";
 export function createApp() {
   const app = new OpenAPIHono();
 
-  app.use("*", cors());
+  // RF-03: CORS configurável via CORS_ORIGINS (default * para compat com apps)
+  const corsOrigins = process.env.CORS_ORIGINS ?? "*";
+  const corsConfig =
+    corsOrigins === "*"
+      ? {}
+      : { origin: corsOrigins.split(",").map((o) => o.trim()) };
+  app.use("*", cors(corsConfig));
+  // RF-01: secure headers globais
+  app.use(
+    "*",
+    secureHeaders({
+      referrerPolicy: "strict-origin-when-cross-origin",
+      // HSTS só quando HTTPS real estiver ativo (domínio próprio + Tunnel)
+      strictTransportSecurity:
+        process.env.NODE_ENV === "production"
+          ? "max-age=31536000; includeSubDomains"
+          : undefined,
+    }),
+  );
+  // Rate limiting Token Bucket (boas práticas louvorja/api)
+  app.use("*", rateLimit);
+
+  // RF-02: error handler global — nunca vaza stack/erro cru do SQLite
+  app.onError((err, c) => {
+    console.error("[piano-api] unhandled error:", err.message);
+    return c.json({ error: "Internal Server Error" }, 500);
+  });
+  app.notFound((c) => c.json({ error: "Not Found" }, 404));
 
   const healthRoute = createRoute({
     method: "get",
