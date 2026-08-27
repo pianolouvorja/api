@@ -88,7 +88,8 @@ export async function setupSeededDb(): Promise<SeededDb> {
       (1,1,'Paulo, apostolo');
   `);
 
-  const router = (await import("../../src/app.js")).default;
+  const { createApp } = await import("../../src/app.js");
+  const router = createApp();
 
   const cleanup = () => {
     closeDb();
