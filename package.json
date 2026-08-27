@@ -1,7 +1,7 @@
 {
   "name": "piano-api",
   "version": "0.1.0",
-  "description": "API propria pianolouvorja — hinarios SDA, Louvor JA, CCB",
+  "description": "API propria pianolouvorja — hinarios SDA e Louvor JA",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -17,7 +17,7 @@
     "validate:pr": "biome check src/ test/ && tsc -p tsconfig.test.json --noEmit && vitest run",
     "import:upstream": "tsx scripts/import-upstream.ts",
     "import:sda": "tsx scripts/import-sda-hymnal.ts",
-    "prepare": "husky"
+    "prepare": "[ \"$NODE_ENV\" = production ] || husky"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",

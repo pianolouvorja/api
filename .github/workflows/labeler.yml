@@ -1,8 +1,9 @@
-# Auto-labeler baseado no path dos arquivos modificados no PR
-name: Auto-Label PR
+# Auto-labeler: aplica labels automaticamente em PRs baseado nos arquivos alterados
+# Usa actions/labeler v5 com .github/labeler.yml
+name: Labeler
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -11,10 +12,10 @@ permissions:
 
 jobs:
   label:
-    name: Label por módulo
+    name: Auto-label PR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/labeler@v5
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
           configuration-path: .github/labeler.yml
+          sync-labels: true

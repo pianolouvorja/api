@@ -1,30 +1,26 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import router from "../../src/app.js";
-import { closeDb, initDb } from "../../src/db/connection.js";
-import { seedTestCatalog } from "../helpers/seed.js";
+import { setupSeededDb } from "../helpers/seeded-db.js";
 
 describe("Regressão Endpoints Legados (compat.ts)", () => {
-  beforeAll(() => {
-    initDb();
-    seedTestCatalog();
+  let router: any;
+  let cleanup: () => void;
+
+  beforeAll(async () => {
+    ({ router, cleanup } = await setupSeededDb());
   });
-  afterAll(() => {
-    closeDb();
-  });
+  afterAll(() => cleanup());
 
   it("GET /json_db/pt_musics - deve retornar array de musicas (formato upstream)", async () => {
     const res = await router.request("/json_db/pt_musics");
     expect(res.status).toBe(200);
     const body = await res.json();
 
-    // Formato upstream: array direto na raiz
     expect(Array.isArray(body)).toBe(true);
-    if (body.length > 0) {
-      expect(body[0]).toHaveProperty("id_music");
-      expect(body[0]).toHaveProperty("name");
-      expect(body[0]).toHaveProperty("lyric");
-      expect(body[0]).toHaveProperty("albums");
-    }
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]).toHaveProperty("id_music");
+    expect(body[0]).toHaveProperty("name");
+    expect(body[0]).toHaveProperty("lyric");
+    expect(body[0]).toHaveProperty("albums");
   });
 
   it("GET /json_db/pt_categories - deve retornar categorias com albums aninhados", async () => {
@@ -33,10 +29,9 @@ describe("Regressão Endpoints Legados (compat.ts)", () => {
     const body = await res.json();
 
     expect(Array.isArray(body)).toBe(true);
-    if (body.length > 0) {
-      expect(body[0]).toHaveProperty("id_category");
-      expect(body[0]).toHaveProperty("albums");
-    }
+    expect(body.length).toBeGreaterThan(0);
+    expect(body[0]).toHaveProperty("id_category");
+    expect(body[0]).toHaveProperty("albums");
   });
 
   it("GET /json_db/music_1 - deve retornar detalhe de musica com estrofes", async () => {
