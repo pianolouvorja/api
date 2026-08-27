@@ -8,3 +8,6 @@ coverage/
 !.env.example
 *.tsbuildinfo
 .vitest/
+
+# Interno (não publicar por enquanto)
+docs/
