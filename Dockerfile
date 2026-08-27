@@ -11,9 +11,11 @@ RUN npm run build
 # Runtime stage
 FROM node:22-slim
 WORKDIR /app
-ENV HUSKY=0
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# husky é devDependency: o script prepare quebraria o npm ci --omit=dev
+RUN npm pkg delete scripts.prepare \
+  && npm ci --omit=dev \
+  && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data media
 EXPOSE 3100
