@@ -1,13 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import router from "../../src/app.js";
-import { closeDb, initDb } from "../../src/db/connection.js";
+import {
+  closeIsolatedDb,
+  openIsolatedDb,
+  seedMinimalCatalog,
+} from "../helpers/catalog.js";
 
 describe("GET /v1/musics", () => {
+  let dbPath: string;
+
   beforeAll(() => {
-    initDb();
+    dbPath = openIsolatedDb("v1-musics");
+    seedMinimalCatalog();
   });
   afterAll(() => {
-    closeDb();
+    closeIsolatedDb(dbPath);
   });
 
   it("deve retornar uma lista de músicas com paginação para pt", async () => {

@@ -1,13 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import router from "../../src/app.js";
-import { closeDb, initDb } from "../../src/db/connection.js";
+import {
+  closeIsolatedDb,
+  openIsolatedDb,
+  seedMinimalCatalog,
+} from "../helpers/catalog.js";
 
 describe("Regressão Endpoints Legados (compat.ts)", () => {
+  let dbPath: string;
+
   beforeAll(() => {
-    initDb();
+    dbPath = openIsolatedDb("compat");
+    seedMinimalCatalog();
   });
   afterAll(() => {
-    closeDb();
+    closeIsolatedDb(dbPath);
   });
 
   it("GET /json_db/pt_musics - deve retornar array de musicas (formato upstream)", async () => {
