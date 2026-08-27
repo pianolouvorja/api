@@ -76,11 +76,52 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  smoke:
+    name: Docker Smoke Test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: piano-api:smoke
+          load: true
+      - name: Run container and check /v1/health
+        run: |
+          docker run -d --rm --name smoke -p 3100:3100 piano-api:smoke
+          for i in $(seq 1 15); do
+            if curl -fsS http://localhost:3100/v1/health > /dev/null 2>&1; then
+              echo "✅ health check OK"
+              docker stop smoke
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::/v1/health não respondeu em 30s"
+          docker logs smoke
+          docker stop smoke || true
+          exit 1
+
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+
   # Quality Gate: so passa se TODAS as camadas passaram
   quality-gate:
     name: Quality Gate
     runs-on: ubuntu-latest
-    needs: [lint, typecheck, test, build]
+    needs: [lint, typecheck, test, build, smoke, audit]
     if: always()
     steps:
       - name: Verifica se todos os gates passaram
@@ -89,7 +130,9 @@ jobs:
           echo "typecheck: ${{ needs.typecheck.result }}"
           echo "test: ${{ needs.test.result }}"
           echo "build: ${{ needs.build.result }}"
-          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.typecheck.result }}" != "success" || "${{ needs.test.result }}" != "success" || "${{ needs.build.result }}" != "success" ]]; then
+          echo "smoke: ${{ needs.smoke.result }}"
+          echo "audit: ${{ needs.audit.result }}"
+          if [[ "${{ needs.lint.result }}" != "success" || "${{ needs.typecheck.result }}" != "success" || "${{ needs.test.result }}" != "success" || "${{ needs.build.result }}" != "success" || "${{ needs.smoke.result }}" != "success" || "${{ needs.audit.result }}" != "success" ]]; then
             echo "::error::Quality Gate FALHOU — corrija os erros antes do merge"
             exit 1
           fi

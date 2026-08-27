@@ -7,6 +7,7 @@ COPY tsconfig*.json ./
 COPY src/ ./src/
 RUN npm run build
 # Prune devDependencies, keep compiled native modules (better-sqlite3)
+# Evita npm ci --omit=dev no runtime (prepare: husky not found)
 RUN npm prune --omit=dev
 
 # Runtime stage

@@ -6,6 +6,10 @@ modulo:routes:
     - any-glob-to-any-file: src/routes/**
     - any-glob-to-any-file: src/v1/**
 
+modulo:v1-remote:
+  - changed-files:
+    - any-glob-to-any-file: src/v1/remote/**
+
 modulo:db:
   - changed-files:
     - any-glob-to-any-file: src/db/**
