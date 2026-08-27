@@ -1,20 +1,16 @@
-import { unlinkSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeDb, getDb, initDb } from "../../src/db/connection.js";
-
-const TEST_DB = "./data/test-integration.db";
+import { getDb } from "../../src/db/connection.js";
+import { closeIsolatedDb, openIsolatedDb } from "../helpers/catalog.js";
 
 describe("DB Connection", () => {
+  let dbPath: string;
+
   beforeEach(() => {
-    process.env.DB_PATH = TEST_DB;
-    initDb();
+    dbPath = openIsolatedDb("integration");
   });
 
   afterEach(() => {
-    closeDb();
-    try {
-      unlinkSync(TEST_DB);
-    } catch {}
+    closeIsolatedDb(dbPath);
   });
 
   it("deve conectar no SQLite", () => {
