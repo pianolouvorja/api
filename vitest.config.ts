@@ -3,7 +3,16 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     globals: true,
-    setupFiles: ["./test/setup-db.ts"],
+    environment: "node",
+    include: ["test/**/*.test.ts"],
+    // Serial + um processo: better-sqlite3 crasha no teardown com workers paralelos
+    fileParallelism: false,
+    pool: "forks",
+    poolOptions: {
+      forks: {
+        singleFork: true,
+      },
+    },
     coverage: {
       provider: "istanbul",
       reporter: ["text", "lcov", "html"],
