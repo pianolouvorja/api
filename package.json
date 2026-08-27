@@ -1,6 +1,6 @@
 {
   "name": "piano-api",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "API propria pianolouvorja — hinarios SDA e Louvor JA",
   "type": "module",
   "main": "dist/index.js",
