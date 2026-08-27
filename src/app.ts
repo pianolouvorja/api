@@ -20,6 +20,10 @@ export function createApp() {
   app.use("*", cors());
   // Rate limiting Token Bucket (boas práticas louvorja/api)
   app.use("*", rateLimit);
+  app.onError((error, c) => {
+    console.error(error);
+    return c.json({ error: "Erro interno" }, 500);
+  });
 
   const healthRoute = createRoute({
     method: "get",
