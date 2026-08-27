@@ -58,7 +58,7 @@ for lang in pt es en; do
     else
       fails=$((fails+1))
     fi
-    sleep 0.05
+    sleep 0.8  # respeita rate limit upstream (~4500 req/h)
   done
   echo "music_$id ($lang): $n ok, $fails fails"
 done

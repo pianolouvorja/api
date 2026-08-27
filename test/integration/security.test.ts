@@ -1,13 +1,18 @@
 // Testes de camadas de segurança (SPEC: security-hardening)
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.js";
-import { initDb } from "../../src/db/connection.js";
+import { closeDb, initDb } from "../../src/db/connection.js";
 
 let app: ReturnType<typeof createApp>;
 
 beforeAll(() => {
+  process.env.DB_PATH = ":memory:";
   initDb();
   app = createApp();
+});
+
+afterAll(() => {
+  closeDb();
 });
 
 describe("RF-01: secure headers", () => {

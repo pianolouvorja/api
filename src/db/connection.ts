@@ -8,6 +8,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let db: Database.Database | null = null;
 
 export function initDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
   const dbPath = process.env.DB_PATH ?? "./data/catalog.db";
   // Garantir que o diretorio pai existe (better-sqlite3 nao cria)
   // :memory: DBs nao precisam de diretorio
@@ -62,6 +66,24 @@ export function initDb(): void {
       }
     }
   }
+  // Migration 013 pode ser ignorada em DB novo; garantir tabela base.
+  db!.exec(`
+    CREATE TABLE IF NOT EXISTS lyrics (
+      id_lyric INTEGER PRIMARY KEY AUTOINCREMENT,
+      id_music INTEGER NOT NULL,
+      lyric TEXT NOT NULL,
+      aux_lyric TEXT,
+      id_file_image INTEGER,
+      time TEXT DEFAULT '00:00',
+      instrumental_time TEXT DEFAULT '00:00',
+      show_slide INTEGER DEFAULT 1,
+      "order" INTEGER DEFAULT 0,
+      id_language TEXT NOT NULL,
+      FOREIGN KEY (id_music) REFERENCES musics(id_music),
+      FOREIGN KEY (id_language) REFERENCES languages(id_language),
+      FOREIGN KEY (id_file_image) REFERENCES files(id_file)
+    )
+  `);
   console.log(`${files.length} migrations aplicadas`);
 }
 

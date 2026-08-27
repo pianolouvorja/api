@@ -12,6 +12,7 @@ RUN npm prune --omit=dev
 # Runtime stage
 FROM node:22-slim
 WORKDIR /app
+ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY package*.json ./
 COPY --from=builder /app/dist ./dist
