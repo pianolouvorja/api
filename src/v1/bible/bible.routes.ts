@@ -38,13 +38,13 @@ const listRoute = createRoute({
 
 app.openapi(listRoute, (c) => {
   const { lang } = c.req.valid("query");
-
   const db = getDb();
-  if (!db) return c.json({ data: [] }, 200);
 
   try {
     const books = db
-      .prepare(`SELECT * FROM bible_books WHERE id_language = ?`)
+      .prepare(
+        `SELECT *, id_book AS id_bible_book FROM bible_books WHERE id_language = ?`,
+      )
       .all(lang) as any[];
 
     const response = {
@@ -105,7 +105,6 @@ app.openapi(chapterRoute, (c) => {
   const { bookId, chapter } = c.req.valid("param");
 
   const db = getDb();
-  if (!db) return c.json({ error: "Idioma invalido" }, 404);
 
   try {
     const parsedBookId = parseInt(bookId, 10);

@@ -1,7 +1,7 @@
 {
   "name": "piano-api",
-  "version": "0.1.0",
-  "description": "API propria pianolouvorja — hinarios SDA, Louvor JA, CCB",
+  "version": "0.2.0",
+  "description": "API propria pianolouvorja — hinarios SDA e Louvor JA",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -17,7 +17,13 @@
     "validate:pr": "biome check src/ test/ && tsc -p tsconfig.test.json --noEmit && vitest run",
     "import:upstream": "tsx scripts/import-upstream.ts",
     "import:sda": "tsx scripts/import-sda-hymnal.ts",
-    "prepare": "husky"
+    "version:major": "npm version major -m \"chore: versão %s\"",
+    "version:minor": "npm version minor -m \"chore: versão %s\"",
+    "version:patch": "npm version patch -m \"chore: versão %s\"",
+    "version:max": "npm run version:major",
+    "version:min": "npm run version:minor",
+    "version:bug": "npm run version:patch",
+    "prepare": "[ \"$NODE_ENV\" = production ] || husky"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.0",
@@ -25,7 +31,7 @@
     "@scalar/hono-api-reference": "^0.11.13",
     "better-sqlite3": "^11.0.0",
     "hono": "^4.6.0",
-    "kysely": "^0.27.0",
+    "kysely": "^0.29.5",
     "zod": "^3.23.0"
   },
   "lint-staged": {

@@ -6,12 +6,16 @@ RUN npm ci
 COPY tsconfig*.json ./
 COPY src/ ./src/
 RUN npm run build
+# Prune devDependencies, keep compiled native modules (better-sqlite3)
+# Evita npm ci --omit=dev no runtime (prepare: husky not found)
+RUN npm prune --omit=dev
 
 # Runtime stage
 FROM node:22-slim
 WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/node_modules ./node_modules
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 RUN mkdir -p data media
 EXPOSE 3100

@@ -2,7 +2,7 @@
 
 ## GOAL: 500 rounds | 5 fases
 
-Escopo: paridade com as 64 rotas do Laravel/Lumen (auth + admin CRUD + read), mirror de midia Hostinger, plus SDA Hymnal, separacao CCB.
+Escopo: paridade com as 64 rotas do Laravel/Lumen (auth + admin CRUD + read), mirror de midia Hostinger e plus SDA Hymnal.
 
 ### Hierarquia de Repos
 - `louvorja/api` = referencia base (Laravel/Lumen PHP). So consultamos.
@@ -96,7 +96,7 @@ Replicar todas as rotas do `louvorja/api` (routes/web.php).
 
 ---
 
-## FASE 4 — Plus SDA Hymnal + CCB (Rounds 426-500)
+## FASE 4 — Plus SDA Hymnal (Rounds 426-500)
 
 O diferencial do `pianolouvorja/api` — o que a referencia nao tem.
 
@@ -106,13 +106,11 @@ O diferencial do `pianolouvorja/api` — o que a referencia nao tem.
 | 4.2 | Import SDA Hymnal — 695 hinos (letras via NPM `sda-hymnal`) |
 | 4.3 | Audio SDA — SacCentral (483/695 MP3 coral) + MIDI frazras (695, GPL) |
 | 4.4 | Endpoints SDA: `/sda/hymns`, `/sda/hymns/{id}`, `/sda/hymns/{id}/audio` |
-| 4.5 | Separacao arquitetural CCB — tabela e endpoints proprios `/ccb/*` |
-| 4.6 | Import CCB hinos (tabela `ccb_hymns` tem 0 registros) |
-| 4.7 | Testes para endpoints SDA + CCB (100% coverage) |
-| 4.8 | Documentacao SDA Hymnal no README |
-| 4.9 | Release v1.0.0 — tag, GitHub Release, changelog |
+| 4.5 | Testes para endpoints SDA (100% coverage) |
+| 4.6 | Documentacao SDA Hymnal no README |
+| 4.7 | Release v1.0.0 — tag, GitHub Release, changelog |
 
-**Entrega da Fase 4:** Diferencial completo. API superior a referencia: tem tudo que ela tem + SDA Hymnal + CCB separado.
+**Entrega da Fase 4:** Diferencial completo. API superior a referencia: tem tudo que ela tem + SDA Hymnal.
 
 ---
 
@@ -124,7 +122,7 @@ O diferencial do `pianolouvorja/api` — o que a referencia nao tem.
 | 1 — Dados + Fundacao | 76-175 | Lyrics + Biblia + Auth + Endpoints basicos |
 | 2 — Mirror Hostinger | 176-275 | Midia self-hosted (~7.6 GB) |
 | 3 — Paridade 64 Rotas | 276-425 | Paridade TOTAL com louvorja/api |
-| 4 — Plus SDA + CCB | 426-500 | Diferencial + Release v1.0.0 |
+| 4 — Plus SDA Hymnal | 426-500 | Diferencial + Release v1.0.0 |
 | **TOTAL** | **500** | **API superior a referencia** |
 
 ---
