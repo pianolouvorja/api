@@ -1,6 +1,10 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.js";
+import { validateEnv } from "./config/env.js";
 import { initDb } from "./db/connection.js";
+
+// RF-04: fail fast se env inválida
+validateEnv(process.env as Record<string, string | undefined>);
 
 const app = createApp();
 const port = Number(process.env.PORT ?? 3100);

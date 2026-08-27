@@ -1,13 +1,17 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { getDbStats } from "./db/connection.js";
+import { APP_VERSION } from "./lib/version.js";
+import { rateLimit } from "./middleware/rateLimit.js";
 import { compatRoutes } from "./routes/compat.js";
 import { albumsRoutes } from "./v1/albums/albums.routes.js";
 import { bibleRoutes } from "./v1/bible/bible.routes.js";
 import { categoriesRoutes } from "./v1/categories/categories.routes.js";
 // Rotas OpenAPI (V1)
 import { musicsRoutes } from "./v1/musics/musics.routes.js";
+import { remoteRoutes } from "./v1/remote/remote.routes.js";
 
 // Rotas compativeis (nao-OpenAPI)
 
@@ -16,7 +20,34 @@ import { createRoute, z } from "@hono/zod-openapi";
 export function createApp() {
   const app = new OpenAPIHono();
 
-  app.use("*", cors());
+  // RF-03: CORS configurável via CORS_ORIGINS (default * para compat com apps)
+  const corsOrigins = process.env.CORS_ORIGINS ?? "*";
+  const corsConfig =
+    corsOrigins === "*"
+      ? {}
+      : { origin: corsOrigins.split(",").map((o) => o.trim()) };
+  app.use("*", cors(corsConfig));
+  // RF-01: secure headers globais
+  app.use(
+    "*",
+    secureHeaders({
+      referrerPolicy: "strict-origin-when-cross-origin",
+      // HSTS só quando HTTPS real estiver ativo (domínio próprio + Tunnel)
+      strictTransportSecurity:
+        process.env.NODE_ENV === "production"
+          ? "max-age=31536000; includeSubDomains"
+          : undefined,
+    }),
+  );
+  // Rate limiting Token Bucket (boas práticas louvorja/api)
+  app.use("*", rateLimit);
+
+  // RF-02: error handler global — nunca vaza stack/erro cru do SQLite
+  app.onError((err, c) => {
+    console.error("[piano-api] unhandled error:", err.message);
+    return c.json({ error: "Internal Server Error" }, 500);
+  });
+  app.notFound((c) => c.json({ error: "Not Found" }, 404));
 
   const healthRoute = createRoute({
     method: "get",
@@ -45,7 +76,7 @@ export function createApp() {
     return c.json(
       {
         status: "ok",
-        version: "0.1.0",
+        version: APP_VERSION,
         uptime: Math.floor(process.uptime()),
         db_size: stats.sizeBytes,
         tables: stats.tableCount,
@@ -61,12 +92,13 @@ export function createApp() {
   app.route("/", compatRoutes);
 
   app.route("/v1/bible", bibleRoutes);
+  app.route("/v1/remote", remoteRoutes);
 
   // Registrar especificacao OpenAPI
   app.doc("/openapi.json", {
     openapi: "3.0.0",
     info: {
-      version: "0.1.0",
+      version: APP_VERSION,
       title: "Piano Louvor JA API",
       description:
         "API propria drop-in replacement para api.louvorja.com.br.\n\nFornece catalogo de musicas, hinos, albuns, categorias e biblia.\n\n**Endpoints de compatibilidade** (`/json_db/*`, `/file/*`, `/db/*`) nao aparecem nesta documentacao pois usam path matching dinamico.",
@@ -93,5 +125,3 @@ export function createApp() {
 
   return app;
 }
-
-export default createApp();

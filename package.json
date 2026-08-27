@@ -1,7 +1,7 @@
 {
   "name": "piano-api",
-  "version": "0.1.0",
-  "description": "API propria pianolouvorja — hinarios SDA, Louvor JA, CCB",
+  "version": "0.2.0",
+  "description": "API propria pianolouvorja — hinarios SDA e Louvor JA",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
@@ -25,7 +25,7 @@
     "@scalar/hono-api-reference": "^0.11.13",
     "better-sqlite3": "^11.0.0",
     "hono": "^4.6.0",
-    "kysely": "^0.27.0",
+    "kysely": "^0.29.5",
     "zod": "^3.23.0"
   },
   "lint-staged": {

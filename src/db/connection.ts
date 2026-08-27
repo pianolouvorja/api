@@ -8,10 +8,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let db: Database.Database | null = null;
 
 export function initDb(): void {
+  if (db) {
+    db.close();
+    db = null;
+  }
   const dbPath = process.env.DB_PATH ?? "./data/catalog.db";
   mkdirSync(dirname(dbPath), { recursive: true });
   db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  // WAL nao funciona com :memory: — usar DELETE mode para testes
+  if (dbPath !== ":memory:") {
+    db.pragma("journal_mode = WAL");
+  }
   db.pragma("foreign_keys = ON");
 
   // Rodar migrations — tentar multiplos caminhos (dev e build)

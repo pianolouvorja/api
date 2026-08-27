@@ -43,12 +43,20 @@ if (existsSync(migrationsDir)) {
 
 async function fetchJson(path: string): Promise<any> {
   const url = `${UPSTREAM}${path}`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.error(`  FAIL ${res.status}: ${url}`);
-    return null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.error(`  FAIL ${res.status}: ${url}`);
+        return null;
+      }
+      return res.json();
+    } catch (error) {
+      if (attempt === 3) throw error;
+      await sleep(attempt * 500);
+    }
   }
-  return res.json();
+  return null;
 }
 
 function sleep(ms: number) {
