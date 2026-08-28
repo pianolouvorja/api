@@ -5,6 +5,7 @@ import { join } from "node:path";
 export interface SeededDb {
   router: any;
   cleanup: () => void;
+  getDb: () => ReturnType<typeof import("../../src/db/connection.js").getDb>;
 }
 
 /**
@@ -25,7 +26,7 @@ export async function setupSeededDb(): Promise<SeededDb> {
   db.pragma("foreign_keys = OFF");
 
   db.exec(`
-    INSERT INTO languages (id_language, name) VALUES ('pt','Portugues'), ('es','Espanhol');
+    INSERT OR IGNORE INTO languages (id_language, name) VALUES ('pt','Portugues'), ('es','Espanhol');
 
     INSERT INTO files (id_file, name, path, type, url, size, dir, file_name, duration, version, image_position)
     VALUES
@@ -86,7 +87,8 @@ export async function setupSeededDb(): Promise<SeededDb> {
       (1,1,'Paulo, apostolo');
   `);
 
-  const router = (await import("../../src/app.js")).default;
+  const { createApp } = await import("../../src/app.js");
+  const router = createApp();
 
   const cleanup = () => {
     closeDb();
@@ -95,5 +97,5 @@ export async function setupSeededDb(): Promise<SeededDb> {
     rmSync(tmpDir, { recursive: true, force: true });
   };
 
-  return { router, cleanup };
+  return { router, cleanup, getDb };
 }

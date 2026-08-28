@@ -20,7 +20,7 @@ beforeAll(async () => {
 
   // ===== SEED =====
   db.exec(`
-    INSERT INTO languages (id_language, name) VALUES ('pt','Portugues'), ('es','Espanhol');
+    INSERT OR IGNORE INTO languages (id_language, name) VALUES ('pt','Portugues'), ('es','Espanhol');
 
     INSERT INTO files (id_file, name, path, type, url, size, dir, file_name, duration, version, image_position)
     VALUES
@@ -82,7 +82,8 @@ beforeAll(async () => {
       (1,1,'Paulo, apostolo');
   `);
 
-  router = (await import("../../src/app.js")).default;
+  const { createApp } = await import("../../src/app.js");
+  router = createApp();
 });
 
 afterAll(() => {
