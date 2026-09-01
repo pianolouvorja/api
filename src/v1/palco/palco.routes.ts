@@ -4,6 +4,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   createRoom,
   getRoom,
+  getRoomToken,
   joinRoom,
   leaveRoom,
   MAX_MSG_BYTES,
@@ -107,6 +108,13 @@ palcoRoutes.post("/sessions", (c) => {
   const created = createRoom();
   if (!created) return c.json({ error: "relay_indisponivel" }, 503);
   return c.json({ code: created.code, token: created.token }, 201);
+});
+
+// Receiver browser informa apenas o código; token HMAC nunca vai para a TV.
+palcoRoutes.get("/sessions/:code/token", (c) => {
+  const token = getRoomToken(c.req.param("code"));
+  if (!token) return c.json({ error: "sessao_nao_encontrada" }, 404);
+  return c.json({ token });
 });
 
 // Introspecção (debug/admin)

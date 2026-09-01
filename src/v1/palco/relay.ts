@@ -108,6 +108,16 @@ export function getRoom(code: string, token: string): PalcoRoom | null {
   return room;
 }
 
+/** Token de bootstrap para receiver browser, limitado a rooms ativas. */
+export function getRoomToken(code: string): string | null {
+  const normalized = normalizeCode(code);
+  if (!/^[A-Z0-9]{6}$/.test(normalized) || !secretKey()) return null;
+  const room = store.rooms.get(roomKey(normalized));
+  if (!room) return null;
+  room.lastActivityAt = Date.now();
+  return signRoom(normalized);
+}
+
 export function joinRoom(
   room: PalcoRoom,
   client: RelayClient,

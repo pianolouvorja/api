@@ -93,6 +93,22 @@ describe("palco relay E2E (WS real)", () => {
     } catch {}
   });
 
+  it("GET /v1/palco/sessions/:code/token retorna token de sessão ativa", async () => {
+    const app = createApp();
+    const created = await app.request("/v1/palco/sessions", { method: "POST" });
+    const { code, token } = (await created.json()) as {
+      code: string;
+      token: string;
+    };
+
+    const res = await app.request(`/v1/palco/sessions/${code.toLowerCase()}/token`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ token });
+
+    const missing = await app.request("/v1/palco/sessions/ZZZZZZ/token");
+    expect(missing.status).toBe(404);
+  });
+
   it("POST /v1/palco/sessions cria code+token", async () => {
     const app = createApp();
     const res = await app.request("/v1/palco/sessions", { method: "POST" });
