@@ -1,3 +1,4 @@
+import { createNodeWebSocket } from "@hono/node-ws";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
@@ -11,6 +12,12 @@ import { bibleRoutes } from "./v1/bible/bible.routes.js";
 import { categoriesRoutes } from "./v1/categories/categories.routes.js";
 // Rotas OpenAPI (V1)
 import { musicsRoutes } from "./v1/musics/musics.routes.js";
+import {
+  getPalcoWs,
+  palcoRoutes,
+  registerPalcoWs,
+  setPalcoWs,
+} from "./v1/palco/palco.routes.js";
 import { remoteRoutes } from "./v1/remote/remote.routes.js";
 
 // Rotas compativeis (nao-OpenAPI)
@@ -93,6 +100,11 @@ export function createApp() {
 
   app.route("/v1/bible", bibleRoutes);
   app.route("/v1/remote", remoteRoutes);
+  app.route("/v1/palco", palcoRoutes);
+
+  // WT-5a: WS do relay do Palco — mesmo app raiz (requisito do @hono/node-ws)
+  setPalcoWs(createNodeWebSocket({ app }));
+  registerPalcoWs(app, getPalcoWs());
 
   // Registrar especificacao OpenAPI
   app.doc("/openapi.json", {
