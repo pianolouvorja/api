@@ -151,13 +151,24 @@ export function joinRoom(
       client.send(state);
     }
   }
+  notifyPresence(room);
   return { ok: true };
+}
+
+/** Conta receivers vivos e avisa os operators (card "TV conectada"). */
+export function notifyPresence(room: PalcoRoom): void {
+  const count = [...room.clients].filter((c) => c.role === "receiver").length;
+  const msg = JSON.stringify({ v: 2, type: "youare", receivers: count });
+  for (const c of room.clients) {
+    if (c.role === "operator") c.send(msg);
+  }
 }
 
 export function leaveRoom(room: PalcoRoom, client: RelayClient): void {
   room.clients.delete(client);
   room.lastStateBySender.delete(client.id);
   room.lastActivityAt = Date.now();
+  notifyPresence(room);
 }
 
 /**
