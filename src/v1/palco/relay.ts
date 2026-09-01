@@ -157,8 +157,17 @@ export function joinRoom(
 
 /** Conta receivers vivos e avisa os operators (card "TV conectada"). */
 export function notifyPresence(room: PalcoRoom): void {
-  const count = [...room.clients].filter((c) => c.role === "receiver").length;
-  const msg = JSON.stringify({ v: 2, type: "youare", receivers: count });
+  // WT-5: lista individual dos receivers (não só contagem) — o card do web
+  // mostra uma entrada por TV realmente conectada, sem slot fantasma.
+  const receivers = [...room.clients]
+    .filter((c) => c.role === "receiver")
+    .map((c, i) => ({ id: c.cid || c.id, label: `TV ${i + 1}` }));
+  const msg = JSON.stringify({
+    v: 2,
+    type: "youare",
+    receivers: receivers.length,
+    receiverList: receivers,
+  });
   for (const c of room.clients) {
     if (c.role === "operator") c.send(msg);
   }
