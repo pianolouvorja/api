@@ -18,6 +18,8 @@ export type PalcoRole = "operator" | "sender" | "receiver";
 
 export interface RelayClient {
   id: string;
+  /** Identidade estável do client (query ?cid=) — reconexão limpa o morto. */
+  cid?: string;
   role: PalcoRole;
   send: (data: string) => void;
 }
@@ -122,6 +124,18 @@ export function joinRoom(
   room: PalcoRoom,
   client: RelayClient,
 ): { ok: boolean; error?: string } {
+  // Reconexão por identidade: se existe client antigo com o MESMO cid (socket
+  // morto cujo onClose não rodou — caso real 01/09: web/TV reconectando tomava
+  // 4409 e entrava em loop), expulsa o morto e deixa o novo entrar.
+  // cid diferente = operator de verdade novo → 4409 (2 operadores se pisam
+  // conscientemente, não por reconexão).
+  if (client.cid) {
+    const stale = [...room.clients].filter((c) => c.cid === client.cid);
+    for (const dead of stale) {
+      room.clients.delete(dead);
+      room.lastStateBySender.delete(dead.id);
+    }
+  }
   const operators = [...room.clients].filter((c) => c.role === "operator");
   if (client.role === "operator" && operators.length >= 1) {
     return { ok: false, error: "operator_already_present" };

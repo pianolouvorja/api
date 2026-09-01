@@ -66,6 +66,7 @@ export function registerPalcoWs(
           }
           const client: RelayClient = {
             id: `${role}-${randomBytes(6).toString("hex")}`,
+            cid: (c.req.query("cid") ?? "").slice(0, 64) || undefined,
             role,
             send: (data) => ws.send(data),
           };
@@ -87,6 +88,17 @@ export function registerPalcoWs(
           if (raw.length > MAX_MSG_BYTES) {
             ws.send(JSON.stringify({ error: "msg_too_large" }));
             return;
+          }
+          // Keepalive da aplicação: responde pong sem broadcast — ping não
+          // é estado e não deve chegar aos receivers (01/09).
+          try {
+            const parsed = JSON.parse(raw) as { type?: string };
+            if (parsed.type === "ping") {
+              ws.send(JSON.stringify({ v: 2, type: "pong" }));
+              return;
+            }
+          } catch {
+            // não-JSON segue o roteamento normal (que rejeita)
           }
           const targets = routeMessage(room, client, raw);
           if (targets === null) {
