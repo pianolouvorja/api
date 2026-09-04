@@ -1,4 +1,5 @@
 import { createNodeWebSocket } from "@hono/node-ws";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
@@ -91,6 +92,11 @@ export function createApp() {
       200,
     );
   });
+
+  // WT-5J: receiver desktop/TV browser na mesma origem da API/relay.
+  // `index: "index.html"` evita redirect que descartaria ?code= e ?api=.
+  app.use("/palco", serveStatic({ root: "./static", index: "index.html" }));
+  app.use("/palco/*", serveStatic({ root: "./static" }));
 
   // Anexar roteadores Zod V1
   app.route("/v1/musics", musicsRoutes);
