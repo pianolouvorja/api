@@ -1,5 +1,5 @@
-const CACHE = 'palco-receiver-v3'
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg']
+const CACHE = 'palco-receiver-v4'
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)))
