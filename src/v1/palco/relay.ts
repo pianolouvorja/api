@@ -161,7 +161,7 @@ export function notifyPresence(room: PalcoRoom): void {
   // mostra uma entrada por TV realmente conectada, sem slot fantasma.
   const receivers = [...room.clients]
     .filter((c) => c.role === "receiver")
-    .map((c, i) => ({ id: c.cid || c.id, label: `TV ${i + 1}` }));
+    .map((c, i) => ({ id: c.cid || c.id, label: `Monitor ${i + 1}` }));
   const msg = JSON.stringify({
     v: 2,
     type: "youare",

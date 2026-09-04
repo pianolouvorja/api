@@ -96,6 +96,7 @@ export function createApp() {
   // WT-5J: receiver desktop/TV browser na mesma origem da API/relay.
   // `index: "index.html"` evita redirect que descartaria ?code= e ?api=.
   app.use("/palco", serveStatic({ root: "./static", index: "index.html" }));
+  app.use("/palco/", serveStatic({ root: "./static", index: "index.html" }));
   app.use("/palco/*", serveStatic({ root: "./static" }));
 
   // Anexar roteadores Zod V1
