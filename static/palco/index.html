@@ -5,7 +5,7 @@
 <script>
 const PALCO_API_WS=(location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/v1/palco';
 const params=new URLSearchParams(location.search);const api=(params.get('api')||PALCO_API_WS).replace(/\/$/,'');
-const $=id=>document.getElementById(id);let ws=null,code=localStorage.getItem('louvorja.palco.code')||'',retry=1000,manual=false;
+const $=id=>document.getElementById(id);let ws=null,code=(params.get('code')||localStorage.getItem('louvorja.palco.code')||'').toUpperCase(),retry=1000,manual=false;
 $('code').value=code;
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 function setStatus(s,on=false){$('status').textContent=s;$('dot').classList.toggle('on',on)}
