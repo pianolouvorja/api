@@ -34,7 +34,7 @@ async function startServer(): Promise<TestServer> {
 function connectWs(
   url: string,
   path: string,
-): Promise<{ ws: WebSocket; messages: string[]; opened: Promise<void>; closed: Promise<{ code: number }> }> {
+): { ws: WebSocket; messages: string[]; opened: Promise<void>; closed: Promise<{ code: number }> } {
   const ws = new WebSocket(`${url.replace("http", "ws")}${path}`);
   const messages: string[] = [];
   let openedResolve: () => void;

@@ -68,6 +68,12 @@ export function registerPalcoWs(
             id: `${role}-${randomBytes(6).toString("hex")}`,
             cid: (c.req.query("cid") ?? "").slice(0, 64) || undefined,
             role,
+            // WT-6A: receiver declara seu slot lógico (?slot=N) para receber
+            // conteúdo direcionado (Bíblia→Monitor 1, Hino→Monitor 2).
+            slot: (() => {
+              const s = Number(c.req.query("slot"));
+              return Number.isInteger(s) && s >= 1 && s <= 32 ? s : undefined;
+            })(),
             send: (data) => ws.send(data),
           };
           const joined = joinRoom(room, client);
