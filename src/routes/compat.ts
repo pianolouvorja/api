@@ -9,7 +9,8 @@ import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Hono } from "hono";
 import { getDb } from "../db/connection.js";
-import { fetchUpstream } from "../lib/upstream.js";
+import { importMusicById, ON_MISS_ENABLED } from "../lib/importMusicOnMiss.js";
+import { fetchUpstream, UpstreamError } from "../lib/upstream.js";
 
 export const compatRoutes = new Hono();
 
@@ -138,7 +139,7 @@ compatRoutes.get("/json_db/:file", async (c) => {
           m.id_music, m.name,
           CASE WHEN IFNULL(m.id_file_instrumental_music, 0) > 0 THEN 1 ELSE 0 END as has_instrumental_music,
           fm.duration as duration,
-          (SELECT GROUP_CONCAT(l.lyric, ' ') FROM lyrics l WHERE l.id_music = m.id_music) as lyric,
+          (SELECT COALESCE(GROUP_CONCAT(COALESCE(l.lyric, ''), ' '), '') FROM lyrics l WHERE l.id_music = m.id_music) as lyric,
           (SELECT GROUP_CONCAT(al.name, '|')
              FROM albums al
              INNER JOIN albums_musics am2 ON am2.id_album = al.id_album
@@ -173,7 +174,7 @@ compatRoutes.get("/json_db/:file", async (c) => {
         name: m.name,
         has_instrumental_music: m.has_instrumental_music,
         duration: m.duration || null,
-        lyric: m.lyric || null,
+        lyric: m.lyric ?? "",
         albums_names: m.albums_names || null,
         albums: albums.map((a) => ({
           id_album: a.id_album,
@@ -196,7 +197,7 @@ compatRoutes.get("/json_db/:file", async (c) => {
         `SELECT m.id_music, m.name, am.track,
            CASE WHEN IFNULL(m.id_file_instrumental_music, 0) > 0 THEN 1 ELSE 0 END as has_instrumental_music,
            fm.duration as duration,
-           (SELECT GROUP_CONCAT(l.lyric, ' ') FROM lyrics l WHERE l.id_music = m.id_music) as lyric
+           (SELECT COALESCE(GROUP_CONCAT(COALESCE(l.lyric, ''), ' '), '') FROM lyrics l WHERE l.id_music = m.id_music) as lyric
          FROM musics m
          INNER JOIN albums_musics am ON am.id_music = m.id_music
          INNER JOIN categories_albums ca ON ca.id_album = am.id_album
@@ -218,7 +219,7 @@ compatRoutes.get("/json_db/:file", async (c) => {
         `SELECT m.id_music, m.name, am.track,
            CASE WHEN IFNULL(m.id_file_instrumental_music, 0) > 0 THEN 1 ELSE 0 END as has_instrumental_music,
            fm.duration as duration,
-           (SELECT GROUP_CONCAT(l.lyric, ' ') FROM lyrics l WHERE l.id_music = m.id_music) as lyric
+           (SELECT COALESCE(GROUP_CONCAT(COALESCE(l.lyric, ''), ' '), '') FROM lyrics l WHERE l.id_music = m.id_music) as lyric
          FROM musics m
          INNER JOIN albums_musics am ON am.id_music = m.id_music
          INNER JOIN categories_albums ca ON ca.id_album = am.id_album
@@ -236,6 +237,18 @@ compatRoutes.get("/json_db/:file", async (c) => {
   const musicMatch = file.match(/^music_(\d+)$/);
   if (musicMatch) {
     const idMusic = parseInt(musicMatch[1], 10);
+    // Fetch on-miss: se nao existe local e o upstream tem, importa e serve.
+    const exists = db
+      .prepare("SELECT 1 FROM musics WHERE id_music = ?")
+      .get(idMusic);
+    if (!exists && ON_MISS_ENABLED) {
+      try {
+        const imported = await importMusicById(idMusic, db);
+        if (imported) return handleMusicDetail(c, db, idMusic);
+      } catch {
+        // upstream indisponivel: cai no 404 normal abaixo
+      }
+    }
     return handleMusicDetail(c, db, idMusic);
   }
 
@@ -391,6 +404,7 @@ function handleAlbumDetail(c: any, db: any, idAlbum: number) {
     .prepare(
       `SELECT m.id_music, m.name,
          CASE WHEN IFNULL(m.id_file_instrumental_music, 0) > 0 THEN 1 ELSE 0 END as has_instrumental_music,
+         CASE WHEN IFNULL(fm.url, '') <> '' THEN 1 ELSE 0 END as has_playback,
          fm.duration as duration, am.track
        FROM musics m
        INNER JOIN albums_musics am ON am.id_music = m.id_music
@@ -410,6 +424,7 @@ function handleAlbumDetail(c: any, db: any, idAlbum: number) {
       id_music: m.id_music,
       name: m.name,
       has_instrumental_music: m.has_instrumental_music,
+      has_playback: !!m.has_playback,
       duration: m.duration || null,
       track: m.track,
     })),
@@ -433,10 +448,18 @@ async function handleBibleChapter(c: any, cacheKey: string) {
   try {
     const upstreamUrl = `${UPSTREAM}/json_db/${cacheKey}`;
     const res = await fetchUpstream(upstreamUrl);
+    if (res.status === 404) {
+      // Versão/capítulo não existe no upstream — espelha o 404 em vez de 502
+      return c.json({ error: "Arquivo nao encontrado!" }, 404);
+    }
     const data = await res.text();
     writeFileSync(cacheFile, data, "utf-8");
     return c.json(JSON.parse(data));
-  } catch {
+  } catch (e: unknown) {
+    if (e instanceof UpstreamError && e.status === 404) {
+      // Versão/capítulo não existe no upstream — espelha o 404 em vez de 502
+      return c.json({ error: "Arquivo nao encontrado!" }, 404);
+    }
     return c.json({ error: "Failed to fetch chapter from upstream" }, 502);
   }
 }

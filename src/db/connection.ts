@@ -49,11 +49,12 @@ export function initDb(): void {
     const sql = readFileSync(join(migrationsDir, file), "utf-8");
     try {
       db!.exec(sql);
-    } catch (e: any) {
+    } catch (e) {
       // Ignorar erros de coluna duplicada ou tabela inexistente em migrations idempotentes
+      const msg = e instanceof Error ? e.message : String(e);
       if (
-        !e.message?.includes("duplicate column name") &&
-        !e.message?.includes("no such table")
+        !msg.includes("duplicate column name") &&
+        !msg.includes("no such table")
       ) {
         throw e;
       }
