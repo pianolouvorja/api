@@ -106,12 +106,6 @@ function resolveBucket(normalizedPath: string): Bucket {
   return "general";
 }
 
-function getClientIp(c: Context): string {
-  const fwd = c.req.header("x-forwarded-for");
-  if (fwd) return (fwd.split(",")[0] ?? "").trim();
-  return c.req.header("x-real-ip") ?? "unknown";
-}
-
 /**
  * RF-05: extração de IP segura contra spoofing de X-Forwarded-For.
  * Só confia no header quando TRUSTED_PROXY=true (ex: atrás de Cloudflare Tunnel).
