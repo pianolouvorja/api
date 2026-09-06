@@ -17,11 +17,25 @@ goto parse
 
 :run
 if not defined URL ( echo Erro: --url obrigatorio & exit /b 1 )
-rem Acha Chrome em ordem: PATH, ProgramFiles, x86, LocalAppData
-set "CANDIDATES=%CHROME_EXE% "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" "%LocalAppData%\Google\Chrome\Application\chrome.exe""
-for %%C in (%CANDIDATES%) do if exist %%C ( set "CHROME=%%~C" & goto found )
-where chrome.exe >nul 2>&1 && ( set "CHROME=chrome.exe" & goto found )
-echo Erro: Chrome nao encontrado & exit /b 127
+rem Browser-agnostic: Edge (Chromium, mesmo flag) > Chrome > Brave > Firefox.
+rem Firefox aceita -kiosk mas ignora --window-position de forma confiavel —
+rem multi-monitor por bounds e' garantido so' na familia Chromium.
+set "BROWSER="
+set "FLAGS=--kiosk --app"
+set "CANDIDATES="
+rem Edge primeiro: vem pre-instalado em todo Windows 10/11
+set "CANDIDATES=!CANDIDATES! "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe" "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe""
+set "CANDIDATES=!CANDIDATES! "%ProgramFiles%\Google\Chrome\Application\chrome.exe" "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe" "%LocalAppData%\Google\Chrome\Application\chrome.exe""
+set "CANDIDATES=!CANDIDATES! "%LocalAppData%\BraveSoftware\Brave-Browser\Application\brave.exe""
+set "CANDIDATES=!CANDIDATES! "%ProgramFiles%\Mozilla Firefox\firefox.exe" "%ProgramFiles(x86)%\Mozilla Firefox\firefox.exe""
+for %%C in (%CANDIDATES%) do if not defined BROWSER if exist %%C ( set "BROWSER=%%~C" )
+if not defined BROWSER (
+  where msedge.exe >nul 2>&1 && ( set "BROWSER=msedge.exe" & goto found )
+  where chrome.exe >nul 2>&1 && ( set "BROWSER=chrome.exe" & goto found )
+  where firefox.exe >nul 2>&1 && ( set "BROWSER=firefox.exe" & goto found )
+)
+if not defined BROWSER ( echo Erro: nenhum browser suportado encontrado (Edge/Chrome/Brave/Firefox) & exit /b 127 )
+echo !BROWSER! | find /i "firefox" >nul && ( set "FLAGS=-kiosk" & set "APPFLAG=" ) || set "APPFLAG=--app"
 :found
 
 rem Detecta monitores via .NET (System.Windows.Forms.Screen — coordenadas virtuais)
@@ -49,7 +63,11 @@ for %%M in ("%MONITORS:;=" "%") do (
         set "SURL=!SURL:[SL]=!N!"
       ) else set "SURL=!SURL!&slot=!N!"
       echo Tela !N! (slot !N!): !SURL!
-      start "" "!CHROME!" --kiosk --app="!SURL!" --user-data-dir="%LOCALAPPDATA%\louvorja-palco-kiosk\screen-!N!" --window-position=%%a,%%b --window-size=%%c,%%d --no-first-run --disable-session-crashed-bubble
+      if defined APPFLAG (
+        start "" "!BROWSER!" !FLAGS! %APPFLAG%="!SURL!" --user-data-dir="%LOCALAPPDATA%\louvorja-palco-kiosk\screen-!N!" --window-position=%%a,%%b --window-size=%%c,%%d --no-first-run --disable-session-crashed-bubble
+      ) else (
+        start "" "!BROWSER!" !FLAGS! "!SURL!" --window-position=%%a,%%b --window-size=%%c,%%d --no-first-run
+      )
     )
   )
 )

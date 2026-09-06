@@ -7,7 +7,15 @@ set -euo pipefail
 URL=''
 SCREENS=()
 DRY_RUN=false
-CHROME="${CHROME_BIN:-google-chrome}"
+# Browser-agnostic: CHROME_BIN ainda vence (compat), senão Edge > Chromium >
+# Chrome > Brave > Firefox. Firefox: -kiosk sem --app; bounds podem falhar.
+CHROME="${CHROME_BIN:-}"
+if [[ -z "$CHROME" ]]; then
+  for b in microsoft-edge microsoft-edge-stable microsoft-edge-beta \
+           chromium chromium-browser google-chrome google-chrome-stable brave-browser firefox; do
+    command -v "$b" >/dev/null 2>&1 && { CHROME="$b"; break; }
+  done
+fi
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/louvorja-piano/palco-kiosk"
 
 usage() {
@@ -41,7 +49,11 @@ done
 
 [[ -n "$URL" ]] || { echo 'Erro: --url é obrigatório.' >&2; usage; exit 2; }
 ((${#SCREENS[@]})) || { echo 'Erro: informe pelo menos uma tela.' >&2; usage; exit 2; }
-command -v "$CHROME" >/dev/null || { echo "Erro: Chrome não encontrado: $CHROME" >&2; exit 127; }
+command -v "$CHROME" >/dev/null || { echo "Erro: nenhum browser suportado encontrado (Edge/Chromium/Chrome/Brave/Firefox): $CHROME" >&2; exit 127; }
+# Firefox: -kiosk aceita URL direta (sem --app) e ignora --user-data-dir inline;
+# bounds por monitor podem não ser respeitados — aviso ao usuário.
+IS_FIREFOX=false
+[[ "$CHROME" == *firefox* ]] && IS_FIREFOX=true
 mkdir -p "$STATE_DIR"
 
 for i in "${!SCREENS[@]}"; do
@@ -54,7 +66,12 @@ for i in "${!SCREENS[@]}"; do
   screenUrl=$(sed -E "s/([?&])slot=[0-9]+/\\1slot=__TMP__/" <<<"$URL")
   if grep -q 'slot=' <<<"$screenUrl"; then screenUrl=${screenUrl/__TMP__/$((i+1))}
   else screenUrl="$URL$(grep -q '?' <<<"$URL" && echo '&' || echo '?')slot=$((i+1))"; fi
-  cmd=("$CHROME" --kiosk --app="$screenUrl" --user-data-dir="$STATE_DIR/screen-$((i+1))" --window-position="$x,$y" --window-size="$width,$height" --no-first-run --disable-session-crashed-bubble)
+  if $IS_FIREFOX; then
+    cmd=("$CHROME" -kiosk "$screenUrl" --window-position="$x,$y" --window-size="$width,$height" --no-remote -CreateProfile "palco-kiosk-$((i+1))")
+    $DRY_RUN || $IS_FIREFOX && echo "Aviso: Firefox pode ignorar o posicionamento por monitor — confira as janelas." >&2
+  else
+    cmd=("$CHROME" --kiosk --app="$screenUrl" --user-data-dir="$STATE_DIR/screen-$((i+1))" --window-position="$x,$y" --window-size="$width,$height" --no-first-run --disable-session-crashed-bubble)
+  fi
   printf 'Tela %d (slot %d): ' "$((i+1))" "$((i+1))"; printf '%q ' "${cmd[@]}"; printf '\n'
   "$DRY_RUN" || "${cmd[@]}" >/dev/null 2>&1 &
 done
