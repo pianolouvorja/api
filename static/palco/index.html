@@ -15,17 +15,23 @@ $('screenInfo').onclick=detectCurrentScreen;
 // "+ Nova tela": janela nova do receiver, mesma sessão. Popup remanescente
 // (small) já maximizada — usuário só arrasta pro próximo monitor. Um clique.
 $('newScreen').onclick=()=>{try{console.log('[palco] nova tela: abrindo',location.href);
+// Próximo slot livre: pergunta ao relay (receiverList via youare? não —
+// simplifica: deriva do maior slot já aberto nesta sessão, guardado no
+// localStorage por sessão). Janela nova já nasce como slot N+1 e o operador
+// pode mandar conteúdo distinto pra ela (não-espelho).
+const url=new URL(location.href);url.searchParams.set('slot',String(nextSlotFor()));
 // 1ª tentativa: window.open SEM features (mesmo _blank simples). Features de
 // popup (popup=yes,w=...,h=...) ativam o bloqueador e o Chromium nega — era a
 // causa do '✕ Pop-up bloqueado'.
-let w=null;try{w=window.open(location.href,'_blank')}catch(e){}
-if(w&&w.document){w.opener=null;console.log('[palco] nova tela: janela criada ok');return}
+let w=null;try{w=window.open(url.href,'_blank')}catch(e){}
+if(w&&w.document){w.opener=null;console.log('[palco] nova tela: janela criada ok, slot',url.searchParams.get('slot'));return}
 // 2ª tentativa: âncora target=_blank sintética (Chrome trata diferente de
 // window.open; costuma passar mesmo onde o popup foi negado).
-const a=document.createElement('a');a.href=location.href;a.target='_blank';a.rel='opener';
+const a=document.createElement('a');a.href=url.href;a.target='_blank';a.rel='opener';
 document.body.appendChild(a);a.click();a.remove();
 setTimeout(()=>{const b=$('newScreen');b.textContent='✕ Pop-up bloqueado? Arraste a janela p/ o monitor';setTimeout(()=>b.textContent='＋ Nova tela',4000)},300);
-console.log('[palco] nova tela: fallback âncora disparado')}catch(e){console.error('[palco] nova tela: exceção',e)}};
+console.log('[palco] nova tela: fallback âncora disparado, slot',url.searchParams.get('slot'))}catch(e){console.error('[palco] nova tela: exceção',e)}};
+function nextSlotFor(){try{const s=parseInt(localStorage.getItem('louvorja.palco.maxSlot.'+code)||'',10)||mySlot;const n=Math.min(s+1,32);localStorage.setItem('louvorja.palco.maxSlot.'+code,String(n));return n}catch(e){return mySlot+1}}
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 // Instalação PWA: captura o prompt do Chrome e oferece botão explícito.
 // O Chrome só emite beforeinstallprompt quando QUALIFICA (HTTPS+manifest+SW);
@@ -46,8 +52,11 @@ async function connect(){manual=true;code=$('code').value.trim().toUpperCase().r
 // ("+ Nova tela") incrementa — receiver do slot N recebe só conteúdo to:slot-N.
 const params2=new URLSearchParams(location.search);
 let mySlot=parseInt(params2.get('slot')||'',10);
-if(!(mySlot>=1&&mySlot<=32)){mySlot=parseInt(localStorage.getItem('louvorja.palco.slot')||'',10)||1}
-localStorage.setItem('louvorja.palco.slot',String(mySlot));
+if(!(mySlot>=1&&mySlot<=32)){mySlot=parseInt(localStorage.getItem('louvorja.palco.slot.'+code)||'',10)||1}
+// Chave POR SESSÃO (código): janelas de sessões diferentes não brigam por slot.
+// Persistido só quando veio da URL (?slot=N) — instância kiosk/TV guarda o
+// próprio. Sem URL param, default 1 (janela "principal").
+if(params2.get('slot'))localStorage.setItem('louvorja.palco.slot.'+code,String(mySlot));
 function open(token){setStatus('conectando…');ws=new WebSocket(api+'/relay/'+code+'?token='+encodeURIComponent(token)+'&role=receiver&slot='+mySlot+'&cid=palco-'+mySlot);ws.onopen=()=>{retry=1000;manual=false;setStatus('conectado',true);$('setup').classList.add('hidden');$('stage').classList.remove('hidden');$('connected').textContent=code+' · Monitor '+mySlot;showInstallOnStage()};ws.onmessage=e=>{try{render(JSON.parse(e.data))}catch{}};ws.onclose=e=>{if(e.code===4404){setStatus('sessão inválida');return}setStatus('desconectado — reconectando…');schedule()};ws.onerror=()=>setStatus('erro de conexão')}
 function schedule(){if(manual)return;setTimeout(()=>{if(code)connect()},retry);retry=Math.min(retry*2,10000)}
 // Fullscreen no primeiro gesto: Chromium só aceita requestFullscreen dentro
