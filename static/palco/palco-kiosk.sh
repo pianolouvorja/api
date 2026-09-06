@@ -49,8 +49,13 @@ for i in "${!SCREENS[@]}"; do
   [[ $x =~ ^-?[0-9]+$ && $y =~ ^-?[0-9]+$ && $width =~ ^[0-9]+$ && $height =~ ^[0-9]+$ ]] || {
     echo "Erro: screen inválida: ${SCREENS[$i]} (esperado X,Y,LARGURA,ALTURA)" >&2; exit 2;
   }
-  cmd=("$CHROME" --kiosk --app="$URL" --user-data-dir="$STATE_DIR/screen-$((i+1))" --window-position="$x,$y" --window-size="$width,$height" --no-first-run --disable-session-crashed-bubble)
-  printf 'Tela %d: ' "$((i+1))"; printf '%q ' "${cmd[@]}"; printf '\n'
+  # Slot N+1 por tela: cada monitor é um receiver lógico distinto (conteúdo
+  # independente por módulo no operador). Tela 1 = slot 1, tela 2 = slot 2…
+  screenUrl=$(sed -E "s/([?&])slot=[0-9]+/\\1slot=__TMP__/" <<<"$URL")
+  if grep -q 'slot=' <<<"$screenUrl"; then screenUrl=${screenUrl/__TMP__/$((i+1))}
+  else screenUrl="$URL$(grep -q '?' <<<"$URL" && echo '&' || echo '?')slot=$((i+1))"; fi
+  cmd=("$CHROME" --kiosk --app="$screenUrl" --user-data-dir="$STATE_DIR/screen-$((i+1))" --window-position="$x,$y" --window-size="$width,$height" --no-first-run --disable-session-crashed-bubble)
+  printf 'Tela %d (slot %d): ' "$((i+1))" "$((i+1))"; printf '%q ' "${cmd[@]}"; printf '\n'
   "$DRY_RUN" || "${cmd[@]}" >/dev/null 2>&1 &
 done
 
