@@ -1,4 +1,4 @@
-const CACHE = 'palco-receiver-v5'
+const CACHE = 'palco-receiver-v6'
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png', './logo-louvor-ja.svg', './logo-piano-louvorja.png', './splash-palco.jpg', './bg-fallback.png']
 
 self.addEventListener('install', (event) => {
