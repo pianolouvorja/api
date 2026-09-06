@@ -14,7 +14,18 @@ async function detectCurrentScreen(){const out=$('screenInfo');if(!window.getScr
 $('screenInfo').onclick=detectCurrentScreen;
 // "+ Nova tela": janela nova do receiver, mesma sessão. Popup remanescente
 // (small) já maximizada — usuário só arrasta pro próximo monitor. Um clique.
-$('newScreen').onclick=()=>{try{console.log('[palco] nova tela: abrindo',location.href);const w=window.open(location.href,'_blank','popup=yes,width='+screen.availWidth+',height='+screen.availHeight);if(!w){console.error('[palco] nova tela: window.open retornou null — popup bloqueado pelo navegador');const b=$('newScreen');b.textContent='✕ Pop-up bloqueado';setTimeout(()=>b.textContent='＋ Nova tela',3000)}else{console.log('[palco] nova tela: janela criada ok')}}catch(e){console.error('[palco] nova tela: exceção',e)}};
+$('newScreen').onclick=()=>{try{console.log('[palco] nova tela: abrindo',location.href);
+// 1ª tentativa: window.open SEM features (mesmo _blank simples). Features de
+// popup (popup=yes,w=...,h=...) ativam o bloqueador e o Chromium nega — era a
+// causa do '✕ Pop-up bloqueado'.
+let w=null;try{w=window.open(location.href,'_blank')}catch(e){}
+if(w&&w.document){w.opener=null;console.log('[palco] nova tela: janela criada ok');return}
+// 2ª tentativa: âncora target=_blank sintética (Chrome trata diferente de
+// window.open; costuma passar mesmo onde o popup foi negado).
+const a=document.createElement('a');a.href=location.href;a.target='_blank';a.rel='opener';
+document.body.appendChild(a);a.click();a.remove();
+setTimeout(()=>{const b=$('newScreen');b.textContent='✕ Pop-up bloqueado? Arraste a janela p/ o monitor';setTimeout(()=>b.textContent='＋ Nova tela',4000)},300);
+console.log('[palco] nova tela: fallback âncora disparado')}catch(e){console.error('[palco] nova tela: exceção',e)}};
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 // Instalação PWA: captura o prompt do Chrome e oferece botão explícito.
 // O Chrome só emite beforeinstallprompt quando QUALIFICA (HTTPS+manifest+SW);
