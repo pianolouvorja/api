@@ -11,3 +11,4 @@ coverage/
 
 # Interno (não publicar por enquanto)
 docs/
+__pycache__/
