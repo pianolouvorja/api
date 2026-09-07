@@ -6,6 +6,7 @@ set -euo pipefail
 
 BASE="${BACKUP_DIR:-$HOME/piano-api}"
 API="${UPSTREAM_API:-https://api.louvorja.com.br}"
+API_FALLBACK="${UPSTREAM_FALLBACK_API:-https://api.louvorja.workers.dev}"
 DB="${DB_PATH:-$BASE/data/catalog.db}"
 MEDIA="$BASE/media"
 STATE="$BASE/backups/.mirror_state"
@@ -28,7 +29,8 @@ while IFS= read -r url; do
     # Encoda apenas espacos/acentos, NAO as barras (%2F -> 404 no upstream)
     enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe='/'))" "$url")
     mkdir -p "$(dirname "$dest")"
-    if curl -sf --retry 2 "$API/file/$enc" -o "$dest.tmp"; then
+    if curl -sf --retry 2 "$API/file/$enc" -o "$dest.tmp" \
+       || curl -sf --retry 2 "$API_FALLBACK/file/$enc" -o "$dest.tmp"; then
       mv "$dest.tmp" "$dest"
       ok=$((ok+1))
     else

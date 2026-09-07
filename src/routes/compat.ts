@@ -476,6 +476,10 @@ import { pipeline } from "node:stream/promises";
 
 const MEDIA_DIR = join(process.cwd(), "media");
 const MIRROR_ENABLED = process.env.MEDIA_MIRROR !== "off";
+/** Fallback de mídia: workers.dev quando o host principal falhar. */
+const MEDIA_FALLBACK_HOST = (
+  process.env.UPSTREAM_FALLBACK_API ?? "https://api.louvorja.workers.dev"
+).replace(/\/$/, "");
 
 compatRoutes.get("/file/:path{.*}", async (c) => {
   const path = c.req.param("path");
@@ -524,31 +528,39 @@ compatRoutes.get("/file/:path{.*}", async (c) => {
     });
   }
 
-  // 2. Mirror on-demand: baixa, salva e serve
+  // 2. Mirror on-demand: baixa, salva e serve (host principal -> fallback)
   if (MIRROR_ENABLED) {
-    try {
-      const res = await fetch(upstreamUrl);
-      if (res.ok && res.body) {
-        mkdirSync(dirname(localPath), { recursive: true });
-        const tmp = `${localPath}.tmp`;
-        await pipeline(
-          Readable.fromWeb(res.body as any),
-          createWriteStream(tmp),
-        );
-        renameSync(tmp, localPath);
-        const buf = await fsReadFile(localPath);
-        return c.body(buf, 200, {
-          "Content-Type":
-            res.headers.get("content-type") ?? "application/octet-stream",
-          "Content-Length": String(buf.length),
-          "Accept-Ranges": "bytes",
-        });
+    const mediaUrls = [
+      upstreamUrl,
+      `${MEDIA_FALLBACK_HOST}/file/${path}`,
+    ].filter(
+      (u, i, arr) => arr.indexOf(u) === i, // dedup se host principal == fallback
+    );
+    for (const mediaUrl of mediaUrls) {
+      try {
+        const res = await fetch(mediaUrl);
+        if (res.ok && res.body) {
+          mkdirSync(dirname(localPath), { recursive: true });
+          const tmp = `${localPath}.tmp`;
+          await pipeline(
+            Readable.fromWeb(res.body as any),
+            createWriteStream(tmp),
+          );
+          renameSync(tmp, localPath);
+          const buf = await fsReadFile(localPath);
+          return c.body(buf, 200, {
+            "Content-Type":
+              res.headers.get("content-type") ?? "application/octet-stream",
+            "Content-Length": String(buf.length),
+            "Accept-Ranges": "bytes",
+          });
+        }
+      } catch {
+        // tenta próximo host
       }
-    } catch {
-      // fallback abaixo
     }
   }
 
-  // 3. Fallback: redirect pro upstream
+  // 3. Fallback final: redirect pro upstream (principal, depois Cloudflare)
   return c.redirect(upstreamUrl, 302);
 });
