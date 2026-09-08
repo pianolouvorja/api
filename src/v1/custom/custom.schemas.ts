@@ -1,0 +1,138 @@
+import { z } from 'zod'
+import { createRoute } from '@hono/zod-openapi'
+
+// Custom Collections
+export const CustomCollectionSchema = z.object({
+  id_collection: z.number(),
+  name: z.string(),
+  description: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  musics_count: z.number().optional(),
+})
+
+export const CustomCollectionsListResponseSchema = z.object({
+  data: z.array(CustomCollectionSchema),
+  meta: z.object({
+    total: z.number(),
+    per_page: z.number(),
+    current_page: z.number(),
+    last_page: z.number(),
+  }),
+})
+
+export const CreateCustomCollectionSchema = z.object({
+  name: z.string().min(1).max(100),
+  description: z.string().max(500).optional(),
+})
+
+export const UpdateCustomCollectionSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+})
+
+// Custom Musics
+export const CustomMusicSchema = z.object({
+  id_music: z.number(),
+  id_collection: z.number(),
+  name: z.string(),
+  lyric: z.string().nullable(),
+  auxiliary_lyric: z.string().nullable(),
+  id_file_audio: z.number().nullable(),
+  id_file_instrumental: z.number().nullable(),
+  id_file_image: z.number().nullable(),
+  duration: z.number().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  // Nested
+  audio_url: z.string().nullable().optional(),
+  instrumental_url: z.string().nullable().optional(),
+  image_url: z.string().nullable().optional(),
+  image_position: z.number().nullable().optional(),
+})
+
+export const CustomMusicsListResponseSchema = z.object({
+  data: z.array(CustomMusicSchema),
+  meta: z.object({
+    total: z.number(),
+    per_page: z.number(),
+    current_page: z.number(),
+    last_page: z.number(),
+  }),
+})
+
+export const CreateCustomMusicSchema = z.object({
+  name: z.string().min(1).max(200),
+  lyric: z.string().optional(),
+  auxiliary_lyric: z.string().optional(),
+  id_file_audio: z.number().optional(),
+  id_file_instrumental: z.number().optional(),
+  id_file_image: z.number().optional(),
+  duration: z.number().optional(),
+})
+
+export const UpdateCustomMusicSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  lyric: z.string().optional(),
+  auxiliary_lyric: z.string().optional(),
+  id_file_audio: z.number().optional(),
+  id_file_instrumental: z.number().optional(),
+  id_file_image: z.number().optional(),
+  duration: z.number().optional(),
+})
+
+// Custom Lyrics (estrofes)
+export const CustomLyricSchema = z.object({
+  id_lyric: z.number(),
+  id_music: z.number(),
+  lyric: z.string(),
+  aux_lyric: z.string().nullable(),
+  id_file_image: z.number().nullable(),
+  time: z.string(),
+  instrumental_time: z.string(),
+  show_slide: z.number(),
+  order: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  // Nested
+  image_url: z.string().nullable().optional(),
+  image_position: z.number().nullable().optional(),
+})
+
+export const CustomLyricsListResponseSchema = z.object({
+  data: z.array(CustomLyricSchema),
+})
+
+export const CreateCustomLyricSchema = z.object({
+  lyric: z.string().min(1),
+  aux_lyric: z.string().optional(),
+  id_file_image: z.number().optional(),
+  time: z.string().optional(),
+  instrumental_time: z.string().optional(),
+  show_slide: z.number().optional(),
+  order: z.number().optional(),
+})
+
+export const UpdateCustomLyricSchema = z.object({
+  lyric: z.string().min(1).optional(),
+  aux_lyric: z.string().optional(),
+  id_file_image: z.number().optional(),
+  time: z.string().optional(),
+  instrumental_time: z.string().optional(),
+  show_slide: z.number().optional(),
+  order: z.number().optional(),
+})
+
+// Import .slja
+export const ImportSljaResponseSchema = z.object({
+  success: z.boolean(),
+  collection_id: z.number().optional(),
+  music_id: z.number().optional(),
+  message: z.string(),
+})
+
+// Export .slja
+export const ExportSljaRequestSchema = z.object({
+  collection_id: z.number(),
+  music_id: z.number().optional(),
+})
