@@ -10,7 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
-import { fetchUpstream, UpstreamError } from "./upstream";
+import { fetchUpstream, UpstreamError } from "./upstream.js";
 
 const UPSTREAM = process.env.UPSTREAM_API ?? "https://api.louvorja.com.br";
 
