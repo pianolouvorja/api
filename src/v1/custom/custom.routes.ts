@@ -863,4 +863,109 @@ customRoutes.openapi(deleteLyricRoute, (c) => {
   }
 })
 
+// ============================================
+// Files — upload de mídia custom (áudio/imagens de .slja)
+// Salva em media/custom/{audio|imagens}/ e registra na tabela files.
+// Servido depois via GET /file/custom/... (compat.ts).
+// ============================================
+
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+const CUSTOM_MEDIA_DIR = join(process.cwd(), 'media', 'custom')
+
+const uploadCustomFileRoute = createRoute({
+  method: 'post',
+  path: '/files',
+  tags: ['custom'],
+  description: 'Upload de arquivo de mídia custom (áudio ou imagem) para uso em músicas/coletâneas',
+  request: {
+    body: {
+      content: {
+        'multipart/form-data': {
+          schema: z.object({
+            file: z.any().describe('Arquivo (mp3, png, jpg, bmp...)'),
+            kind: z.enum(['audio', 'imagens']).optional().describe('Subpasta de destino'),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        'application/json': {
+          schema: z.object({
+            id_file: z.number(),
+            url: z.string(),
+            name: z.string(),
+            size: z.number(),
+          }),
+        },
+      },
+      description: 'Arquivo salvo e registrado',
+    },
+    400: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'Arquivo ausente ou inválido',
+    },
+    500: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'Erro interno',
+    },
+  },
+})
+
+customRoutes.openapi(uploadCustomFileRoute, async (c) => {
+  try {
+    const formData = await c.req.formData()
+    const file = formData.get('file')
+    const kindRaw = formData.get('kind') ?? 'imagens'
+    const kind = kindRaw === 'audio' ? 'audio' : 'imagens'
+
+    if (!(file instanceof File)) {
+      return c.json({ error: 'Campo "file" ausente ou inválido' }, 400)
+    }
+
+    // Sanitiza nome: mantém basename, remove separadores e caracteres perigosos
+    const safeName = file.name
+      .split(/[/\\]/)
+      .pop()!
+      .replace(/[^a-zA-Z0-9._\- ()]/g, '_')
+    if (!safeName || safeName === '.') {
+      return c.json({ error: 'Nome de arquivo inválido' }, 400)
+    }
+
+    const destDir = join(CUSTOM_MEDIA_DIR, kind)
+    mkdirSync(destDir, { recursive: true })
+
+    // Nome final: id_generator-friendly — prefixa timestamp se já existir
+    let finalName = safeName
+    const bytes = Buffer.from(await file.arrayBuffer())
+    let path = join(destDir, finalName)
+    if (existsSync(path)) {
+      const dot = safeName.lastIndexOf('.')
+      const stem = dot > 0 ? safeName.slice(0, dot) : safeName
+      const ext = dot > 0 ? safeName.slice(dot) : ''
+      finalName = `${stem}_${Date.now()}${ext}`
+      path = join(destDir, finalName)
+    }
+    writeFileSync(path, bytes)
+
+    const urlPath = `/custom/${kind}/${finalName}`
+    const type = kind === 'audio' ? 'audio' : 'image'
+
+    const db = getDb()
+    const result = db
+      .prepare(`INSERT INTO files (name, path, type, url, size) VALUES (?, ?, ?, ?, ?)`)
+      .run(safeName, urlPath, type, urlPath, bytes.length)
+    const idFile = Number(result.lastInsertRowid)
+
+    return c.json({ id_file: idFile, url: urlPath, name: safeName, size: bytes.length }, 201)
+  } catch (error) {
+    console.error(error)
+    return c.json({ error: 'Erro ao salvar arquivo' }, 500)
+  }
+})
+
 export { customRoutes }
