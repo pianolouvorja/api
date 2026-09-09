@@ -9,6 +9,10 @@ const envSchema = z.object({
   DB_PATH: z.string().default("./data/catalog.db"),
   MEDIA_DIR: z.string().default("./media"),
   UPSTREAM_API: z.string().url().default("https://api.louvorja.com.br"),
+  UPSTREAM_FALLBACK_API: z
+    .string()
+    .url()
+    .default("https://api.louvorja.workers.dev"),
   CORS_ORIGINS: z.string().default("*"),
   TRUSTED_PROXY: z
     .enum(["true", "false"])

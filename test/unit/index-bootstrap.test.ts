@@ -16,7 +16,11 @@ describe("src/index.ts — bootstrap do servidor", () => {
     const serveMock = vi.fn(
       (_opts: unknown, cb: (info: { port: number }) => void) => {
         cb({ port: 3100 });
-        return { close: () => {} };
+        // server mínimo: injectWebSocket do palco-relay precisa de .on()
+        return {
+          close: () => {},
+          on: () => {},
+        };
       },
     );
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});

@@ -17,9 +17,12 @@ jobs:
           echo "Source branch: ${{ github.head_ref }}"
           echo "Target branch: ${{ github.base_ref }}"
 
-          if [ "${{ github.head_ref }}" != "staging" ]; then
-            echo "::error::PRs para main só podem vir da branch staging. Origem recebida: ${{ github.head_ref }}"
-            exit 1
-          fi
+          case "${{ github.head_ref }}" in
+            staging|release/1.0.0) ;;
+            *)
+              echo "::error::PRs para main só podem vir de staging (ou release/1.0.0 pontual). Origem: ${{ github.head_ref }}"
+              exit 1
+              ;;
+          esac
 
           echo "✅ Origem do PR permitida (staging → main)."
