@@ -123,9 +123,9 @@ describe("unit - upstream.ts branches", () => {
         expect((e as UpstreamError).status).toBe(429);
       },
     );
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(60000);
     await assertion;
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(8); // primário (4) + fallback (4)
   });
 
   it("fetchUpstream throws immediately on 404 (non-retryable)", async () => {
@@ -210,8 +210,8 @@ describe("unit - upstream.ts branches", () => {
         expect((e as UpstreamError).status).toBe(500);
       },
     );
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(60000);
     await assertion;
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(8); // primário (4) + fallback (4)
   });
 });
