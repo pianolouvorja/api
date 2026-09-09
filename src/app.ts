@@ -1,5 +1,5 @@
-import { createNodeWebSocket } from "@hono/node-ws";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
@@ -49,15 +49,6 @@ export function createApp() {
   );
   // Rate limiting Token Bucket (boas práticas louvorja/api)
   app.use("*", rateLimit);
-
-  // Request log temporário p/ validação APK contra API própria (remover depois)
-  app.use("*", async (c, next) => {
-    const start = Date.now();
-    await next();
-    console.log(
-      `[req] ${c.req.method} ${c.req.path} -> ${c.res.status} (${Date.now() - start}ms)`,
-    );
-  });
 
   // RF-02: error handler global — nunca vaza stack/erro cru do SQLite
   app.onError((err, c) => {

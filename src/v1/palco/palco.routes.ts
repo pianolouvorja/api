@@ -8,10 +8,10 @@ import {
   joinRoom,
   leaveRoom,
   MAX_MSG_BYTES,
-  relayStats,
-  routeMessage,
   type PalcoRole,
   type RelayClient,
+  relayStats,
+  routeMessage,
 } from "./relay.js";
 
 export const palcoRoutes = new OpenAPIHono();

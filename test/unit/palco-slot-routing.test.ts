@@ -1,13 +1,13 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   createRoom,
   getRoom,
   joinRoom,
-  routeMessage,
   notifyPresence,
-  resetRelay,
   type RelayClient,
+  resetRelay,
+  routeMessage,
 } from "../../src/v1/palco/relay.js";
 
 const KEY = "test-palco-relay-key-32-bytes!!";

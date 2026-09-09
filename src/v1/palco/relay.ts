@@ -149,7 +149,7 @@ export function joinRoom(
   room.lastActivityAt = Date.now();
   // Late-join: receiver recebe o último estado de cada sender imediatamente.
   if (client.role === "receiver") {
-    for (const [senderId, state] of room.lastStateBySender) {
+    for (const [_senderId, state] of room.lastStateBySender) {
       client.send(state);
     }
   }
@@ -218,9 +218,7 @@ export function routeMessage(
     if (targetSlot === null) return all;
     return all.filter(
       (c) =>
-        c.role === "operator" ||
-        c.role === "sender" ||
-        c.slot === targetSlot,
+        c.role === "operator" || c.role === "sender" || c.slot === targetSlot,
     );
   }
   if (from.role === "sender") {
