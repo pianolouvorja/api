@@ -5,14 +5,13 @@ export default defineConfig({
     globals: true,
     environment: "node",
     include: ["test/**/*.test.ts"],
-    // Serial + um processo: better-sqlite3 crasha no teardown com workers paralelos
+    // Serial: better-sqlite3 + mocks de migration não convivem bem com paralelismo
+    // Vitest 5: poolOptions.forks.singleFork removido
+    // Mantém isolate:true para não vazar mocks entre arquivos
     fileParallelism: false,
     pool: "forks",
-    poolOptions: {
-      forks: {
-        singleFork: true,
-      },
-    },
+    maxWorkers: 1,
+    isolate: true,
     coverage: {
       provider: "istanbul",
       reporter: ["text", "lcov", "html"],
