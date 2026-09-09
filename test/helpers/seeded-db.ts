@@ -5,7 +5,7 @@ import { join } from "node:path";
 export interface SeededDb {
   router: any;
   cleanup: () => void;
-  getDb: () => { exec: (sql: string) => unknown };
+  getDb: () => ReturnType<typeof import("../../src/db/connection.js").getDb>;
 }
 
 /**
@@ -26,7 +26,7 @@ export async function setupSeededDb(): Promise<SeededDb> {
   db.pragma("foreign_keys = OFF");
 
   db.exec(`
-    INSERT INTO languages (id_language, name) VALUES ('pt','Portugues'), ('es','Espanhol');
+    INSERT OR IGNORE INTO languages (id_language, name) VALUES ('pt','Portugues'), ('es','Espanhol');
 
     INSERT INTO files (id_file, name, path, type, url, size, dir, file_name, duration, version, image_position)
     VALUES
@@ -43,8 +43,7 @@ export async function setupSeededDb(): Promise<SeededDb> {
     INSERT INTO musics (id_music, name, id_file_image, id_file_music, id_file_instrumental_music, id_language) VALUES
       (1,'Musica Um',1,2,3,'pt'),
       (30,'Musica Cheia',1,2,3,'pt'),
-      (31,'Musica Nula',NULL,NULL,NULL,'pt'),
-      (32,'Musica Sem Album',NULL,NULL,NULL,'pt');
+      (31,'Musica Nula',NULL,NULL,NULL,'pt');
 
     INSERT INTO lyrics (id_lyric, id_music, lyric, aux_lyric, id_file_image, time, instrumental_time, show_slide, "order", id_language) VALUES
       (1,1,'Solo ao Deus de Israel','aux',1,'00:10','00:12',1,1,'pt'),
@@ -54,7 +53,7 @@ export async function setupSeededDb(): Promise<SeededDb> {
     INSERT INTO albums_musics (id_album, id_music, track, id_language) VALUES
       (1,1,1,'pt'), (20,30,1,'pt'), (21,31,1,'pt');
 
-    CREATE TABLE IF NOT EXISTS bible_chapters (
+    CREATE TABLE bible_chapters (
       id_bible_chapter INTEGER PRIMARY KEY,
       id_bible_book INTEGER NOT NULL,
       id_language TEXT NOT NULL,
