@@ -146,9 +146,10 @@ describe("coverage gaps - functional HTTP paths", () => {
     fs.unlinkSync(cacheFile);
   });
 
-  it("covers compat.ts: bible chapter cache miss -> upstream fail (lines 438-445)", async () => {
+  it("covers compat.ts: bible chapter cache miss -> upstream fail or 404 (lines 438-445)", async () => {
     const res = await router.request("/json_db/bible_999_999_999");
-    expect([200, 502]).toContain(res.status);
+    // 200 = upstream tinha o capítulo; 404 = upstream não conhece (versão inexistente, espelhado); 502 = upstream indisponível
+    expect([200, 404, 502]).toContain(res.status);
   });
 
   it("covers compat.ts: file redirect", async () => {

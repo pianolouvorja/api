@@ -5,6 +5,9 @@
 # - Detecta mudanças via config.latest_updated e só re-importa se mudou (ou --force)
 set -euo pipefail
 
+# PATH com node/npx (cron nao carrega nvm/fnm)
+export PATH="$HOME/.nvm/versions/node/v22.23.2/bin:$PATH"
+
 API="${UPSTREAM_API:-https://api.louvorja.com.br}"
 BASE="${BACKUP_DIR:-$HOME/piano-api}"
 RAW="$BASE/backups/raw"

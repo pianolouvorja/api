@@ -13,7 +13,14 @@ export function initDb(): void {
     db = null;
   }
   const dbPath = process.env.DB_PATH ?? "./data/catalog.db";
-  mkdirSync(dirname(dbPath), { recursive: true });
+  // Garantir que o diretorio pai existe (better-sqlite3 nao cria)
+  // :memory: DBs nao precisam de diretorio
+  if (dbPath !== ":memory:") {
+    const dir = dirname(dbPath);
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+  }
   db = new Database(dbPath);
   // WAL nao funciona com :memory: — usar DELETE mode para testes
   if (dbPath !== ":memory:") {
@@ -49,11 +56,12 @@ export function initDb(): void {
     const sql = readFileSync(join(migrationsDir, file), "utf-8");
     try {
       db!.exec(sql);
-    } catch (e: any) {
+    } catch (e) {
       // Ignorar erros de coluna duplicada ou tabela inexistente em migrations idempotentes
+      const msg = e instanceof Error ? e.message : String(e);
       if (
-        !e.message?.includes("duplicate column name") &&
-        !e.message?.includes("no such table")
+        !msg.includes("duplicate column name") &&
+        !msg.includes("no such table")
       ) {
         throw e;
       }

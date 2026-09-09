@@ -1,3 +1,5 @@
+import { serveStatic } from "@hono/node-server/serve-static";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { apiReference } from "@scalar/hono-api-reference";
 import { cors } from "hono/cors";
@@ -12,6 +14,12 @@ import { categoriesRoutes } from "./v1/categories/categories.routes.js";
 import { customRoutes } from "./v1/custom/custom.routes.js";
 // Rotas OpenAPI (V1)
 import { musicsRoutes } from "./v1/musics/musics.routes.js";
+import {
+  getPalcoWs,
+  palcoRoutes,
+  registerPalcoWs,
+  setPalcoWs,
+} from "./v1/palco/palco.routes.js";
 import { remoteRoutes } from "./v1/remote/remote.routes.js";
 
 // Rotas compativeis (nao-OpenAPI)
@@ -86,6 +94,12 @@ export function createApp() {
     );
   });
 
+  // WT-5J: receiver desktop/TV browser na mesma origem da API/relay.
+  // `index: "index.html"` evita redirect que descartaria ?code= e ?api=.
+  app.use("/palco", serveStatic({ root: "./static", index: "index.html" }));
+  app.use("/palco/", serveStatic({ root: "./static", index: "index.html" }));
+  app.use("/palco/*", serveStatic({ root: "./static" }));
+
   // Anexar roteadores Zod V1
   app.route("/v1/musics", musicsRoutes);
   app.route("/v1/albums", albumsRoutes);
@@ -95,6 +109,11 @@ export function createApp() {
   app.route("/v1/bible", bibleRoutes);
   app.route("/v1/remote", remoteRoutes);
   app.route("/v1/custom", customRoutes);
+  app.route("/v1/palco", palcoRoutes);
+
+  // WT-5a: WS do relay do Palco — mesmo app raiz (requisito do @hono/node-ws)
+  setPalcoWs(createNodeWebSocket({ app }));
+  registerPalcoWs(app, getPalcoWs());
 
   // Registrar especificacao OpenAPI
   app.doc("/openapi.json", {
