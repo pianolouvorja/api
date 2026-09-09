@@ -288,6 +288,64 @@ customRoutes.openapi(deleteCollectionRoute, (c) => {
 // Musics
 // ============================================
 
+// GET /musics — todas as músicas custom (qualquer coletânea), p/ seletor do editor
+const listAllMusicsRoute = createRoute({
+  method: 'get',
+  path: '/musics',
+  tags: ['custom'],
+  description: 'Lista todas as músicas custom (de todas as coletâneas)',
+  request: {},
+  responses: {
+    200: {
+      content: { 'application/json': { schema: CustomMusicsListResponseSchema } },
+      description: 'Lista de músicas',
+    },
+    500: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'Erro interno',
+    },
+  },
+})
+
+customRoutes.openapi(listAllMusicsRoute, (c) => {
+  try {
+    const db = getDb()
+
+    const musics = db
+      .prepare(
+        `SELECT cm.*,
+                cc.name as collection_name,
+                f_audio.url as audio_url,
+                f_inst.url as instrumental_url,
+                f_img.url as image_url,
+                f_img.image_position as image_position
+         FROM custom_musics cm
+         INNER JOIN custom_collections cc ON cm.id_collection = cc.id_collection
+         LEFT JOIN files f_audio ON cm.id_file_audio = f_audio.id_file
+         LEFT JOIN files f_inst ON cm.id_file_instrumental = f_inst.id_file
+         LEFT JOIN files f_img ON cm.id_file_image = f_img.id_file
+         ORDER BY cm.name`,
+      )
+      .all() as any[]
+
+    return c.json(
+      {
+        data: musics,
+        meta: {
+          total: musics.length,
+          per_page: musics.length,
+          current_page: 1,
+          last_page: 1,
+        },
+      },
+      200,
+    )
+  } catch (error) {
+    console.error(error)
+    return c.json({ error: 'Erro ao listar músicas' }, 500)
+  }
+})
+
 const listMusicsRoute = createRoute({
   method: 'get',
   path: '/collections/{id}/musics',
@@ -346,6 +404,98 @@ customRoutes.openapi(listMusicsRoute, (c) => {
   } catch (error) {
     console.error(error)
     return c.json({ error: 'Erro ao listar músicas' }, 500)
+  }
+})
+
+// POST /collections/{id}/musics/{musicId}/copy — clona música (com letra/áudio/bg) p/ outra coletânea
+const copyMusicRoute = createRoute({
+  method: 'post',
+  path: '/collections/{id}/musics/{musicId}/copy',
+  tags: ['custom'],
+  description: 'Copia uma música custom existente para esta coletânea (com letra e mídia)',
+  request: {
+    params: z.object({
+      id: z.string().openapi({ description: 'ID da coletânea destino' }),
+      musicId: z.string().openapi({ description: 'ID da música de origem' }),
+    }),
+  },
+  responses: {
+    201: {
+      content: { 'application/json': { schema: CustomMusicSchema } },
+      description: 'Música copiada',
+    },
+    404: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'Música ou coletânea não encontrada',
+    },
+    500: {
+      content: { 'application/json': { schema: z.object({ error: z.string() }) } },
+      description: 'Erro interno',
+    },
+  },
+})
+
+customRoutes.openapi(copyMusicRoute, (c) => {
+  try {
+    const { id, musicId } = c.req.valid('param')
+    const db = getDb()
+
+    const src = db
+      .prepare('SELECT * FROM custom_musics WHERE id_music = ?')
+      .get(parseInt(musicId, 10)) as any
+    if (!src) return c.json({ error: 'Música de origem não encontrada' }, 404)
+
+    const dest = db
+      .prepare('SELECT id_collection FROM custom_collections WHERE id_collection = ?')
+      .get(parseInt(id, 10)) as any
+    if (!dest) return c.json({ error: 'Coletânea destino não encontrada' }, 404)
+
+    // Evita duplicar na mesma coletânea
+    const dup = db
+      .prepare(
+        'SELECT id_music FROM custom_musics WHERE id_collection = ? AND name = ?',
+      )
+      .get(parseInt(id, 10), src.name) as any
+    if (dup) return c.json(dup, 200)
+
+    const result = db
+      .prepare(
+        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration, official_music_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        parseInt(id, 10),
+        src.name,
+        src.lyric,
+        src.auxiliary_lyric,
+        src.id_file_audio,
+        src.id_file_instrumental,
+        src.id_file_image,
+        src.duration,
+        src.official_music_id,
+      )
+    const newId = result.lastInsertRowid as number
+
+    // Clona as estrofes (letra + timing + bg por estrofe)
+    const lyrics = db
+      .prepare('SELECT * FROM custom_lyrics WHERE id_music = ? ORDER BY "order", id_lyric')
+      .all(src.id_music) as any[]
+    const insertLyric = db.prepare(
+      `INSERT INTO custom_lyrics (id_music, lyric, aux_lyric, id_file_image, time, instrumental_time, show_slide, "order")
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    for (const l of lyrics) {
+      insertLyric.run(
+        newId, l.lyric, l.aux_lyric, l.id_file_image, l.time, l.instrumental_time,
+        l.show_slide ?? 1, l.order ?? 0,
+      )
+    }
+
+    const music = db.prepare('SELECT * FROM custom_musics WHERE id_music = ?').get(newId)
+    return c.json(music, 201)
+  } catch (error) {
+    console.error(error)
+    return c.json({ error: 'Erro ao copiar música' }, 500)
   }
 })
 
