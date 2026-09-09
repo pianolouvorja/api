@@ -394,8 +394,8 @@ customRoutes.openapi(createMusicRoute, (c) => {
 
     const result = db
       .prepare(
-        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration, official_music_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         parseInt(id, 10),
@@ -406,7 +406,18 @@ customRoutes.openapi(createMusicRoute, (c) => {
         body.id_file_instrumental ?? null,
         body.id_file_image ?? null,
         body.duration ?? null,
+        body.official_music_id ?? null,
       )
+
+    // Link p/ hino oficial: herda nome/duração da tabela oficial p/ a lista.
+    if (body.official_music_id != null) {
+      db.prepare(
+        `UPDATE custom_musics
+         SET name = COALESCE((SELECT m.name FROM musics m WHERE m.id_music = ?), name),
+             duration = COALESCE((SELECT fm.duration FROM musics m JOIN files fm ON m.id_file_music = fm.id_file WHERE m.id_music = ?), duration)
+         WHERE id_music = ?`,
+      ).run(body.official_music_id, body.official_music_id, result.lastInsertRowid)
+    }
 
     const music = db
       .prepare(`SELECT * FROM custom_musics WHERE id_music = ?`)

@@ -44,6 +44,8 @@ export const CustomMusicSchema = z.object({
   id_file_instrumental: z.number().nullable(),
   id_file_image: z.number().nullable(),
   duration: z.number().nullable(),
+  // Link p/ hino oficial (null = música própria do usuário)
+  official_music_id: z.number().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   // Nested
@@ -63,15 +65,23 @@ export const CustomMusicsListResponseSchema = z.object({
   }),
 })
 
-export const CreateCustomMusicSchema = z.object({
-  name: z.string().min(1).max(200),
-  lyric: z.string().optional(),
-  auxiliary_lyric: z.string().optional(),
-  id_file_audio: z.number().optional(),
-  id_file_instrumental: z.number().optional(),
-  id_file_image: z.number().optional(),
-  duration: z.number().optional(),
-})
+export const CreateCustomMusicSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    lyric: z.string().optional(),
+    auxiliary_lyric: z.string().optional(),
+    id_file_audio: z.number().optional(),
+    id_file_instrumental: z.number().optional(),
+    id_file_image: z.number().optional(),
+    duration: z.number().optional(),
+    // Hino oficial da API (link): id_music da tabela musics. Quando presente,
+    // a faixa é um atalho — playback/letra resolvem pelo catálogo oficial.
+    official_music_id: z.number().int().positive().optional(),
+  })
+  .refine((v) => v.official_music_id != null || (v.name?.trim().length ?? 0) > 0, {
+    message: 'name é obrigatório quando official_music_id não é informado',
+    path: ['name'],
+  })
 
 export const UpdateCustomMusicSchema = z.object({
   name: z.string().min(1).max(200).optional(),
