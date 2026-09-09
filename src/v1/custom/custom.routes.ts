@@ -215,9 +215,9 @@ customRoutes.openapi(updateCollectionRoute, (c) => {
 
     db.prepare(
       `UPDATE custom_collections
-       SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP
+       SET name = ?, description = ?, cover_url = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id_collection = ?`,
-    ).run(body.name ?? collection.name, body.description ?? collection.description, parseInt(id, 10))
+    ).run(body.name ?? collection.name, body.description ?? collection.description, body.cover_url !== undefined ? body.cover_url : collection.cover_url, parseInt(id, 10))
 
     const updated = db
       .prepare(

@@ -6,6 +6,7 @@ export const CustomCollectionSchema = z.object({
   id_collection: z.number(),
   name: z.string(),
   description: z.string().nullable(),
+  cover_url: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   musics_count: z.number().optional(),
@@ -29,6 +30,7 @@ export const CreateCustomCollectionSchema = z.object({
 export const UpdateCustomCollectionSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
+  cover_url: z.string().nullable().optional(),
 })
 
 // Custom Musics
