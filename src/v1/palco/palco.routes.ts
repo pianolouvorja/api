@@ -4,6 +4,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import {
   createRoom,
   getRoom,
+  getRoomToken,
   joinRoom,
   leaveRoom,
   MAX_MSG_BYTES,
@@ -65,7 +66,14 @@ export function registerPalcoWs(
           }
           const client: RelayClient = {
             id: `${role}-${randomBytes(6).toString("hex")}`,
+            cid: (c.req.query("cid") ?? "").slice(0, 64) || undefined,
             role,
+            // WT-6A: receiver declara seu slot lógico (?slot=N) para receber
+            // conteúdo direcionado (Bíblia→Monitor 1, Hino→Monitor 2).
+            slot: (() => {
+              const s = Number(c.req.query("slot"));
+              return Number.isInteger(s) && s >= 1 && s <= 32 ? s : undefined;
+            })(),
             send: (data) => ws.send(data),
           };
           const joined = joinRoom(room, client);
@@ -87,6 +95,17 @@ export function registerPalcoWs(
             ws.send(JSON.stringify({ error: "msg_too_large" }));
             return;
           }
+          // Keepalive da aplicação: responde pong sem broadcast — ping não
+          // é estado e não deve chegar aos receivers (01/09).
+          try {
+            const parsed = JSON.parse(raw) as { type?: string };
+            if (parsed.type === "ping") {
+              ws.send(JSON.stringify({ v: 2, type: "pong" }));
+              return;
+            }
+          } catch {
+            // não-JSON segue o roteamento normal (que rejeita)
+          }
           const targets = routeMessage(room, client, raw);
           if (targets === null) {
             ws.send(JSON.stringify({ error: "role_nao_publica" }));
@@ -107,6 +126,13 @@ palcoRoutes.post("/sessions", (c) => {
   const created = createRoom();
   if (!created) return c.json({ error: "relay_indisponivel" }, 503);
   return c.json({ code: created.code, token: created.token }, 201);
+});
+
+// Receiver browser informa apenas o código; token HMAC nunca vai para a TV.
+palcoRoutes.get("/sessions/:code/token", (c) => {
+  const token = getRoomToken(c.req.param("code"));
+  if (!token) return c.json({ error: "sessao_nao_encontrada" }, 404);
+  return c.json({ token });
 });
 
 // Introspecção (debug/admin)

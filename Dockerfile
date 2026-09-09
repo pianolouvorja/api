@@ -16,9 +16,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY package*.json ./
-ENV NODE_ENV=production
-RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
+# WT-5: receiver browser em /palco (serveStatic)
+COPY static/ ./static/
 RUN mkdir -p data media
 EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

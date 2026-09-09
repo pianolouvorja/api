@@ -18,7 +18,11 @@ export type PalcoRole = "operator" | "sender" | "receiver";
 
 export interface RelayClient {
   id: string;
+  /** Identidade estável do client (query ?cid=) — reconexão limpa o morto. */
+  cid?: string;
   role: PalcoRole;
+  /** Slot lógico declarado pelo receiver (?slot=N) — roteamento por destino. */
+  slot?: number;
   send: (data: string) => void;
 }
 
@@ -108,10 +112,32 @@ export function getRoom(code: string, token: string): PalcoRoom | null {
   return room;
 }
 
+/** Token de bootstrap para receiver browser, limitado a rooms ativas. */
+export function getRoomToken(code: string): string | null {
+  const normalized = normalizeCode(code);
+  if (!/^[A-Z0-9]{6}$/.test(normalized) || !secretKey()) return null;
+  const room = store.rooms.get(roomKey(normalized));
+  if (!room) return null;
+  room.lastActivityAt = Date.now();
+  return signRoom(normalized);
+}
+
 export function joinRoom(
   room: PalcoRoom,
   client: RelayClient,
 ): { ok: boolean; error?: string } {
+  // Reconexão por identidade: se existe client antigo com o MESMO cid (socket
+  // morto cujo onClose não rodou — caso real 01/09: web/TV reconectando tomava
+  // 4409 e entrava em loop), expulsa o morto e deixa o novo entrar.
+  // cid diferente = operator de verdade novo → 4409 (2 operadores se pisam
+  // conscientemente, não por reconexão).
+  if (client.cid) {
+    const stale = [...room.clients].filter((c) => c.cid === client.cid);
+    for (const dead of stale) {
+      room.clients.delete(dead);
+      room.lastStateBySender.delete(dead.id);
+    }
+  }
   const operators = [...room.clients].filter((c) => c.role === "operator");
   if (client.role === "operator" && operators.length >= 1) {
     return { ok: false, error: "operator_already_present" };
@@ -127,13 +153,37 @@ export function joinRoom(
       client.send(state);
     }
   }
+  notifyPresence(room);
   return { ok: true };
+}
+
+/** Conta receivers vivos e avisa os operators (card "TV conectada"). */
+export function notifyPresence(room: PalcoRoom): void {
+  // WT-5: lista individual dos receivers (não só contagem) — o card do web
+  // mostra uma entrada por TV realmente conectada, sem slot fantasma.
+  const receivers = [...room.clients]
+    .filter((c) => c.role === "receiver")
+    .map((c, i) => ({
+      id: c.cid || c.id,
+      slot: c.slot ?? i + 1,
+      label: `Monitor ${c.slot ?? i + 1}`,
+    }));
+  const msg = JSON.stringify({
+    v: 2,
+    type: "youare",
+    receivers: receivers.length,
+    receiverList: receivers,
+  });
+  for (const c of room.clients) {
+    if (c.role === "operator") c.send(msg);
+  }
 }
 
 export function leaveRoom(room: PalcoRoom, client: RelayClient): void {
   room.clients.delete(client);
   room.lastStateBySender.delete(client.id);
   room.lastActivityAt = Date.now();
+  notifyPresence(room);
 }
 
 /**
@@ -141,6 +191,9 @@ export function leaveRoom(room: PalcoRoom, client: RelayClient): void {
  * - operator → broadcast para senders+receivers (estado do palco)
  * - sender → operator + receivers (estado do slot / status de TVs)
  * - receiver → nada (só assina); ack opcional futuro
+ * Envelope com `to: "slot-N"` restringe aos receivers daquele slot
+ * (WT-6A: Bíblia → Monitor 1, Hino → Monitor 2, cada receiver PWA declara
+ * seu slot na query ?slot=N). Sem `to`, broadcast — retrocompatível.
  * Retorna lista de destinatários ou null se inválido.
  */
 export function routeMessage(
@@ -153,7 +206,20 @@ export function routeMessage(
 
   if (from.role === "operator") {
     room.lastStateBySender.set(from.id, raw);
-    return [...room.clients].filter((c) => c.id !== from.id);
+    const all = [...room.clients].filter((c) => c.id !== from.id);
+    let targetSlot: number | null = null;
+    try {
+      const parsed = JSON.parse(raw) as { to?: string };
+      const m = /^slot-(\d+)$/.exec(String(parsed.to ?? ""));
+      if (m) targetSlot = Number(m[1]);
+    } catch {
+      // não-JSON: broadcast
+    }
+    if (targetSlot === null) return all;
+    return all.filter(
+      (c) =>
+        c.role === "operator" || c.role === "sender" || c.slot === targetSlot,
+    );
   }
   if (from.role === "sender") {
     room.lastStateBySender.set(from.id, raw);
