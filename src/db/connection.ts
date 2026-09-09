@@ -13,14 +13,7 @@ export function initDb(): void {
     db = null;
   }
   const dbPath = process.env.DB_PATH ?? "./data/catalog.db";
-  // Garantir que o diretorio pai existe (better-sqlite3 nao cria)
-  // :memory: DBs nao precisam de diretorio
-  if (dbPath !== ":memory:") {
-    const dir = dirname(dbPath);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-  }
+  mkdirSync(dirname(dbPath), { recursive: true });
   db = new Database(dbPath);
   // WAL nao funciona com :memory: — usar DELETE mode para testes
   if (dbPath !== ":memory:") {
