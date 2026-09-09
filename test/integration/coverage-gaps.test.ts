@@ -147,9 +147,21 @@ describe("coverage gaps - functional HTTP paths", () => {
   });
 
   it("covers compat.ts: bible chapter cache miss -> upstream fail or 404 (lines 438-445)", async () => {
-    const res = await router.request("/json_db/bible_999_999_999");
-    // 200 = upstream tinha o capítulo; 404 = upstream não conhece (versão inexistente, espelhado); 502 = upstream indisponível
-    expect([200, 404, 502]).toContain(res.status);
+    const { vi } = await import("vitest");
+    const { _resetThrottleForTest } = await import("../../src/lib/upstream.js");
+    _resetThrottleForTest();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not found", { status: 404 })),
+    );
+    try {
+      const res = await router.request("/json_db/bible_999_999_999");
+      // Com fetch mockado em 404: espelha 404 (ou 502 se a rota mapear falha)
+      expect([404, 502]).toContain(res.status);
+    } finally {
+      vi.unstubAllGlobals();
+      _resetThrottleForTest();
+    }
   });
 
   it("covers compat.ts: file redirect", async () => {
