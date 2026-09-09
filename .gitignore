@@ -12,3 +12,6 @@ coverage/
 # Interno (não publicar por enquanto)
 docs/
 __pycache__/
+
+# Scripts ad-hoc de teste manual (utilitarios locais, nao sao codigo)
+/wt*-*.mjs
