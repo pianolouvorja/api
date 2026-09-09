@@ -64,9 +64,10 @@ describe("fetchUpstream (rate limit + retry)", () => {
         expect((e as UpstreamError).status).toBe(429);
       },
     );
-    await vi.advanceTimersByTimeAsync(30000);
+    await vi.advanceTimersByTimeAsync(60000);
     await assertion;
-    expect(fetchMock).toHaveBeenCalledTimes(4); // 1 + 3 retries
+    // 1+3 retries no primário, depois 1+3 retries no fallback (429 também cai pro fallback)
+    expect(fetchMock).toHaveBeenCalledTimes(8);
   });
 
   it("lança UpstreamError imediatamente em 404 (não-retryable)", async () => {
