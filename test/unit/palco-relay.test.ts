@@ -4,11 +4,11 @@ import {
   getRoom,
   joinRoom,
   leaveRoom,
+  type RelayClient,
   relayStats,
   resetRelay,
   routeMessage,
   signRoom,
-  type RelayClient,
 } from "../../src/v1/palco/relay.js";
 
 const KEY = "test-palco-relay-key-32-bytes!!";

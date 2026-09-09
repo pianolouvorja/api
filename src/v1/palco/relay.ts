@@ -123,7 +123,7 @@ export function joinRoom(
   room.lastActivityAt = Date.now();
   // Late-join: receiver recebe o último estado de cada sender imediatamente.
   if (client.role === "receiver") {
-    for (const [senderId, state] of room.lastStateBySender) {
+    for (const [_senderId, state] of room.lastStateBySender) {
       client.send(state);
     }
   }

@@ -1,7 +1,6 @@
-import { serve } from "@hono/node-server";
 import { unlinkSync } from "node:fs";
 import type { AddressInfo } from "node:net";
-import type { Server } from "node:http";
+import { serve } from "@hono/node-server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createApp } from "../../src/app.js";
@@ -34,7 +33,12 @@ async function startServer(): Promise<TestServer> {
 function connectWs(
   url: string,
   path: string,
-): Promise<{ ws: WebSocket; messages: string[]; opened: Promise<void>; closed: Promise<{ code: number }> }> {
+): Promise<{
+  ws: WebSocket;
+  messages: string[];
+  opened: Promise<void>;
+  closed: Promise<{ code: number }>;
+}> {
   const ws = new WebSocket(`${url.replace("http", "ws")}${path}`);
   const messages: string[] = [];
   let openedResolve: () => void;
@@ -124,10 +128,7 @@ describe("palco relay E2E (WS real)", () => {
 
     operator.ws.send(JSON.stringify({ module: "bible", verse: "Jo 3:16" }));
 
-    const got = await waitFor(
-      receiver.messages,
-      (m) => m.includes("bible"),
-    );
+    const got = await waitFor(receiver.messages, (m) => m.includes("bible"));
     expect(JSON.parse(got).verse).toBe("Jo 3:16");
 
     // receiver tenta publicar → API recusa
