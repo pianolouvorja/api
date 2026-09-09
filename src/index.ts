@@ -16,6 +16,9 @@ try {
 // RF-04: fail fast se env inválida
 validateEnv(process.env as Record<string, string | undefined>);
 
+// RF-04: fail fast se env inválida
+validateEnv(process.env as Record<string, string | undefined>);
+
 const app = createApp();
 const port = Number(process.env.PORT ?? 3100);
 
