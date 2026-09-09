@@ -1,5 +1,4 @@
-import { z } from 'zod'
-import { createRoute } from '@hono/zod-openapi'
+import { z } from "zod";
 
 // Custom Collections
 export const CustomCollectionSchema = z.object({
@@ -10,7 +9,7 @@ export const CustomCollectionSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   musics_count: z.number().optional(),
-})
+});
 
 export const CustomCollectionsListResponseSchema = z.object({
   data: z.array(CustomCollectionSchema),
@@ -20,18 +19,18 @@ export const CustomCollectionsListResponseSchema = z.object({
     current_page: z.number(),
     last_page: z.number(),
   }),
-})
+});
 
 export const CreateCustomCollectionSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
-})
+});
 
 export const UpdateCustomCollectionSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   cover_url: z.string().nullable().optional(),
-})
+});
 
 // Custom Musics
 export const CustomMusicSchema = z.object({
@@ -53,7 +52,7 @@ export const CustomMusicSchema = z.object({
   instrumental_url: z.string().nullable().optional(),
   image_url: z.string().nullable().optional(),
   image_position: z.number().nullable().optional(),
-})
+});
 
 export const CustomMusicsListResponseSchema = z.object({
   data: z.array(CustomMusicSchema),
@@ -63,7 +62,7 @@ export const CustomMusicsListResponseSchema = z.object({
     current_page: z.number(),
     last_page: z.number(),
   }),
-})
+});
 
 export const CreateCustomMusicSchema = z
   .object({
@@ -78,10 +77,13 @@ export const CreateCustomMusicSchema = z
     // a faixa é um atalho — playback/letra resolvem pelo catálogo oficial.
     official_music_id: z.number().int().positive().optional(),
   })
-  .refine((v) => v.official_music_id != null || (v.name?.trim().length ?? 0) > 0, {
-    message: 'name é obrigatório quando official_music_id não é informado',
-    path: ['name'],
-  })
+  .refine(
+    (v) => v.official_music_id != null || (v.name?.trim().length ?? 0) > 0,
+    {
+      message: "name é obrigatório quando official_music_id não é informado",
+      path: ["name"],
+    },
+  );
 
 export const UpdateCustomMusicSchema = z.object({
   name: z.string().min(1).max(200).optional(),
@@ -91,7 +93,7 @@ export const UpdateCustomMusicSchema = z.object({
   id_file_instrumental: z.number().optional(),
   id_file_image: z.number().optional(),
   duration: z.number().optional(),
-})
+});
 
 // Custom Lyrics (estrofes)
 export const CustomLyricSchema = z.object({
@@ -109,11 +111,11 @@ export const CustomLyricSchema = z.object({
   // Nested
   image_url: z.string().nullable().optional(),
   image_position: z.number().nullable().optional(),
-})
+});
 
 export const CustomLyricsListResponseSchema = z.object({
   data: z.array(CustomLyricSchema),
-})
+});
 
 export const CreateCustomLyricSchema = z.object({
   lyric: z.string().min(1),
@@ -123,7 +125,7 @@ export const CreateCustomLyricSchema = z.object({
   instrumental_time: z.string().optional(),
   show_slide: z.number().optional(),
   order: z.number().optional(),
-})
+});
 
 export const UpdateCustomLyricSchema = z.object({
   lyric: z.string().min(1).optional(),
@@ -133,7 +135,7 @@ export const UpdateCustomLyricSchema = z.object({
   instrumental_time: z.string().optional(),
   show_slide: z.number().optional(),
   order: z.number().optional(),
-})
+});
 
 // Import .slja
 export const ImportSljaResponseSchema = z.object({
@@ -141,10 +143,10 @@ export const ImportSljaResponseSchema = z.object({
   collection_id: z.number().optional(),
   music_id: z.number().optional(),
   message: z.string(),
-})
+});
 
 // Export .slja
 export const ExportSljaRequestSchema = z.object({
   collection_id: z.number(),
   music_id: z.number().optional(),
-})
+});
