@@ -15,6 +15,7 @@ services:
       - MEDIA_DIR=/app/media
       - FIREBASE_PROJECT_ID=pianolouvorja
       - UPSTREAM_API=https://api.louvorja.com.br
+      - UPSTREAM_FALLBACK_API=https://api.louvorja.workers.dev
       - CACHE_TTL_HYMN=86400
       - CACHE_TTL_AUDIO=3600
       - CACHE_TTL_BIBLE=604800
