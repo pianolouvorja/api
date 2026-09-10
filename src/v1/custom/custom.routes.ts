@@ -1,4 +1,5 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
+import type { Context } from "hono";
 import { getDb } from "../../db/connection.js";
 import {
   CreateCustomCollectionSchema,
@@ -13,7 +14,13 @@ import {
   UpdateCustomCollectionSchema,
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
+  // Auth
+  RegisterSchema,
+  LoginSchema,
+  AuthResponseSchema,
+  MeResponseSchema,
 } from "./custom.schemas.js";
+import { optionalAuth, requireAuth } from "./auth.middleware.js";
 
 const customRoutes = new OpenAPIHono();
 
@@ -25,7 +32,8 @@ const listCollectionsRoute = createRoute({
   method: "get",
   path: "/collections",
   tags: ["custom"],
-  description: "Lista todas as coletâneas customizadas (Minhas Coletâneas)",
+  description: "Lista coletâneas customizadas (públicas + minhas se autenticado)",
+  middleware: [optionalAuth] as const,
   responses: {
     200: {
       content: {
@@ -45,15 +53,25 @@ const listCollectionsRoute = createRoute({
 customRoutes.openapi(listCollectionsRoute, (c) => {
   try {
     const db = getDb();
-    const collections = db
-      .prepare(
-        `SELECT cc.*, COUNT(cm.id_music) as musics_count
-         FROM custom_collections cc
-         LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
-         GROUP BY cc.id_collection
-         ORDER BY cc.updated_at DESC`,
-      )
-      .all() as any[];
+    const user = c.get("user") as { id_user: number } | undefined;
+
+    let query = `
+      SELECT cc.*, COUNT(cm.id_music) as musics_count
+      FROM custom_collections cc
+      LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
+    `;
+    const params: any[] = [];
+
+    if (user) {
+      query += ` WHERE cc.owner_id = ? OR cc.owner_id IS NULL`;
+      params.push(user.id_user);
+    } else {
+      query += ` WHERE cc.owner_id IS NULL`;
+    }
+
+    query += ` GROUP BY cc.id_collection ORDER BY cc.updated_at DESC`;
+
+    const collections = db.prepare(query).all(...params) as any[];
 
     return c.json(
       {
@@ -78,6 +96,7 @@ const createCollectionRoute = createRoute({
   path: "/collections",
   tags: ["custom"],
   description: "Cria uma nova coletânea customizada",
+  middleware: [optionalAuth] as const,
   request: {
     body: {
       content: { "application/json": { schema: CreateCustomCollectionSchema } },
@@ -107,12 +126,13 @@ customRoutes.openapi(createCollectionRoute, (c) => {
   try {
     const body = c.req.valid("json");
     const db = getDb();
+    const user = c.get("user") as { id_user: number } | undefined;
 
     const result = db
       .prepare(
-        `INSERT INTO custom_collections (name, description) VALUES (?, ?)`,
+        `INSERT INTO custom_collections (name, description, owner_id, author_name) VALUES (?, ?, ?, ?)`,
       )
-      .run(body.name, body.description ?? null);
+      .run(body.name, body.description ?? null, user?.id_user ?? null, body.author_name ?? null);
 
     const collection = db
       .prepare(`SELECT * FROM custom_collections WHERE id_collection = ?`)
@@ -186,6 +206,7 @@ const updateCollectionRoute = createRoute({
   path: "/collections/{id}",
   tags: ["custom"],
   description: "Atualiza uma coletânea customizada",
+  middleware: [requireAuth] as const,
   request: {
     params: z.object({
       id: z.string().openapi({ description: "ID da coletânea", example: "1" }),
@@ -198,6 +219,18 @@ const updateCollectionRoute = createRoute({
     200: {
       content: { "application/json": { schema: CustomCollectionSchema } },
       description: "Coletânea atualizada",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    403: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Sem permissão",
     },
     404: {
       content: {
@@ -219,6 +252,7 @@ customRoutes.openapi(updateCollectionRoute, (c) => {
     const { id } = c.req.valid("param");
     const body = c.req.valid("json");
     const db = getDb();
+    const user = c.get("user") as { id_user: number };
 
     const collection = db
       .prepare(`SELECT * FROM custom_collections WHERE id_collection = ?`)
@@ -226,6 +260,11 @@ customRoutes.openapi(updateCollectionRoute, (c) => {
 
     if (!collection) {
       return c.json({ error: "Coletânea não encontrada" }, 404);
+    }
+
+    // Apenas dono pode editar (coletâneas sem dono permanecem públicas p/ leitura, mas sem edição)
+    if (collection.owner_id != null && collection.owner_id !== user.id_user) {
+      return c.json({ error: "Sem permissão para editar esta coletânea" }, 403);
     }
 
     db.prepare(
@@ -261,6 +300,7 @@ const deleteCollectionRoute = createRoute({
   path: "/collections/{id}",
   tags: ["custom"],
   description: "Remove uma coletânea customizada (cascade em músicas)",
+  middleware: [requireAuth] as const,
   request: {
     params: z.object({
       id: z.string().openapi({ description: "ID da coletânea", example: "1" }),
@@ -272,6 +312,18 @@ const deleteCollectionRoute = createRoute({
         "application/json": { schema: z.object({ success: z.boolean() }) },
       },
       description: "Coletânea removida",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    403: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Sem permissão",
     },
     404: {
       content: {
@@ -292,6 +344,7 @@ customRoutes.openapi(deleteCollectionRoute, (c) => {
   try {
     const { id } = c.req.valid("param");
     const db = getDb();
+    const user = c.get("user") as { id_user: number };
 
     const collection = db
       .prepare(`SELECT * FROM custom_collections WHERE id_collection = ?`)
@@ -299,6 +352,11 @@ customRoutes.openapi(deleteCollectionRoute, (c) => {
 
     if (!collection) {
       return c.json({ error: "Coletânea não encontrada" }, 404);
+    }
+
+    // Apenas dono pode deletar
+    if (collection.owner_id != null && collection.owner_id !== user.id_user) {
+      return c.json({ error: "Sem permissão para remover esta coletânea" }, 403);
     }
 
     db.prepare(`DELETE FROM custom_collections WHERE id_collection = ?`).run(
@@ -508,8 +566,8 @@ customRoutes.openapi(copyMusicRoute, (c) => {
 
     const result = db
       .prepare(
-        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration, official_music_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration, official_music_id, owner_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         parseInt(id, 10),
@@ -521,6 +579,7 @@ customRoutes.openapi(copyMusicRoute, (c) => {
         src.id_file_image,
         src.duration,
         src.official_music_id,
+        dest.owner_id,
       );
     const newId = result.lastInsertRowid as number;
 
@@ -606,8 +665,8 @@ customRoutes.openapi(createMusicRoute, (c) => {
 
     const result = db
       .prepare(
-        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration, official_music_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO custom_musics (id_collection, name, lyric, auxiliary_lyric, id_file_audio, id_file_instrumental, id_file_image, duration, official_music_id, owner_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         parseInt(id, 10),
@@ -619,6 +678,7 @@ customRoutes.openapi(createMusicRoute, (c) => {
         body.id_file_image ?? null,
         body.duration ?? null,
         body.official_music_id ?? null,
+        collection.owner_id,
       );
 
     // Link p/ hino oficial: herda nome/duração da tabela oficial p/ a lista.
@@ -725,6 +785,7 @@ const updateMusicRoute = createRoute({
   path: "/musics/{id}",
   tags: ["custom"],
   description: "Atualiza uma música customizada",
+  middleware: [requireAuth] as const,
   request: {
     params: z.object({
       id: z.string().openapi({ description: "ID da música", example: "1" }),
@@ -737,6 +798,18 @@ const updateMusicRoute = createRoute({
     200: {
       content: { "application/json": { schema: CustomMusicSchema } },
       description: "Música atualizada",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    403: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Sem permissão",
     },
     404: {
       content: {
@@ -765,6 +838,12 @@ customRoutes.openapi(updateMusicRoute, (c) => {
 
     if (!music) {
       return c.json({ error: "Música não encontrada" }, 404);
+    }
+
+    // Permissão: dono da música OU dono da coletânea pai
+    const user = c.get("user") as { id_user: number };
+    if (music.owner_id != null && music.owner_id !== user.id_user) {
+      return c.json({ error: "Sem permissão para editar esta música" }, 403);
     }
 
     db.prepare(
@@ -809,6 +888,7 @@ const deleteMusicRoute = createRoute({
   path: "/musics/{id}",
   tags: ["custom"],
   description: "Remove uma música customizada (cascade em estrofes)",
+  middleware: [requireAuth] as const,
   request: {
     params: z.object({
       id: z.string().openapi({ description: "ID da música", example: "1" }),
@@ -820,6 +900,18 @@ const deleteMusicRoute = createRoute({
         "application/json": { schema: z.object({ success: z.boolean() }) },
       },
       description: "Música removida",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    403: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Sem permissão",
     },
     404: {
       content: {
@@ -840,6 +932,7 @@ customRoutes.openapi(deleteMusicRoute, (c) => {
   try {
     const { id } = c.req.valid("param");
     const db = getDb();
+    const user = c.get("user") as { id_user: number };
 
     const music = db
       .prepare(`SELECT * FROM custom_musics WHERE id_music = ?`)
@@ -847,6 +940,10 @@ customRoutes.openapi(deleteMusicRoute, (c) => {
 
     if (!music) {
       return c.json({ error: "Música não encontrada" }, 404);
+    }
+
+    if (music.owner_id != null && music.owner_id !== user.id_user) {
+      return c.json({ error: "Sem permissão para remover esta música" }, 403);
     }
 
     db.prepare(`DELETE FROM custom_musics WHERE id_music = ?`).run(
@@ -1244,6 +1341,156 @@ customRoutes.openapi(uploadCustomFileRoute, async (c) => {
     console.error(error);
     return c.json({ error: "Erro ao salvar arquivo" }, 500);
   }
+});
+
+// ============================================
+// Auth — login simples e-mail + senha
+// ============================================
+
+import { hashPassword, verifyPassword, generateSessionToken, hashToken } from "./auth.service.js";
+
+const registerRoute = createRoute({
+  method: "post",
+  path: "/auth/register",
+  tags: ["custom"],
+  description: "Registra um novo usuário de coletâneas custom",
+  request: {
+    body: { content: { "application/json": { schema: RegisterSchema } } },
+  },
+  responses: {
+    201: { content: { "application/json": { schema: AuthResponseSchema } }, description: "Usuário criado" },
+    409: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "E-mail já cadastrado" },
+    422: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Dados inválidos" },
+    500: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Erro interno" },
+  },
+});
+
+customRoutes.openapi(registerRoute, (c) => {
+  try {
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const passwordHash = hashPassword(body.password);
+
+    let result;
+    try {
+      result = db
+        .prepare(`INSERT INTO custom_users (email, password_hash, display_name) VALUES (?, ?, ?)`)
+        .run(body.email, passwordHash, body.displayName);
+    } catch (e: any) {
+      if (e.code === "SQLITE_CONSTRAINT_UNIQUE") {
+        return c.json({ error: "E-mail já cadastrado" }, 409);
+      }
+      throw e;
+    }
+
+    const userId = Number(result.lastInsertRowid);
+    const token = generateSessionToken();
+    db.prepare(`INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`).run(hashToken(token), userId);
+
+    return c.json(
+      { token, user: { id_user: userId, email: body.email, displayName: body.displayName } },
+      201,
+    );
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Erro ao registrar usuário" }, 500);
+  }
+});
+
+const loginRoute = createRoute({
+  method: "post",
+  path: "/auth/login",
+  tags: ["custom"],
+  description: "Login de usuário de coletâneas custom",
+  request: {
+    body: { content: { "application/json": { schema: LoginSchema } } },
+  },
+  responses: {
+    200: { content: { "application/json": { schema: AuthResponseSchema } }, description: "Login ok" },
+    401: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Credenciais inválidas" },
+    500: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Erro interno" },
+  },
+});
+
+customRoutes.openapi(loginRoute, (c) => {
+  try {
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const user = db
+      .prepare(`SELECT id_user, email, display_name, password_hash FROM custom_users WHERE email = ?`)
+      .get(body.email) as any;
+
+    if (!user || !verifyPassword(body.password, user.password_hash)) {
+      return c.json({ error: "Credenciais inválidas" }, 401);
+    }
+
+    const token = generateSessionToken();
+    db.prepare(`INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`).run(hashToken(token), user.id_user);
+
+    return c.json(
+      { token, user: { id_user: user.id_user, email: user.email, displayName: user.display_name } },
+      200,
+    );
+  } catch (error) {
+    console.error(error);
+    return c.json({ error: "Erro ao fazer login" }, 500);
+  }
+});
+
+const logoutRoute = createRoute({
+  method: "post",
+  path: "/auth/logout",
+  tags: ["custom"],
+  description: "Logout — invalida token da sessão",
+  request: {},
+  responses: {
+    204: { description: "Logout ok" },
+    401: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Token inválido" },
+  },
+});
+
+customRoutes.openapi(logoutRoute, (c) => {
+  const raw = c.req.header("authorization") ?? "";
+  const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+  if (!token) return c.json({ error: "Token ausente" }, 401);
+
+  const db = getDb();
+  db.prepare(`DELETE FROM custom_sessions WHERE token_hash = ?`).run(hashToken(token));
+  return c.body(null, 204);
+});
+
+const meRoute = createRoute({
+  method: "get",
+  path: "/auth/me",
+  tags: ["custom"],
+  description: "Usuário autenticado atual",
+  request: {},
+  responses: {
+    200: { content: { "application/json": { schema: MeResponseSchema } }, description: "Usuário logado" },
+    401: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Não autenticado" },
+  },
+});
+
+customRoutes.openapi(meRoute, (c) => {
+  const raw = c.req.header("authorization") ?? "";
+  const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+  if (!token) return c.json({ error: "Não autenticado" }, 401);
+
+  const db = getDb();
+  const session = db
+    .prepare(
+      `SELECT cu.id_user, cu.email, cu.display_name
+       FROM custom_sessions cs
+       INNER JOIN custom_users cu ON cu.id_user = cs.id_user
+       WHERE cs.token_hash = ?`,
+    )
+    .get(hashToken(token)) as any;
+
+  if (!session) return c.json({ error: "Não autenticado" }, 401);
+
+  return c.json({ user: { id_user: session.id_user, email: session.email, displayName: session.display_name } }, 200);
 });
 
 export { customRoutes };
