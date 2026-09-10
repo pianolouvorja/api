@@ -56,18 +56,13 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
     const user = c.get("user") as { id_user: number } | undefined;
 
     let query = `
-      SELECT cc.*, COUNT(cm.id_music) as musics_count
+      SELECT cc.*, COUNT(cm.id_music) as musics_count,
+             ${user ? "(cc.owner_id = ?)" : "0"} as is_owner
       FROM custom_collections cc
       LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
     `;
     const params: any[] = [];
-
-    if (user) {
-      query += ` WHERE cc.owner_id = ? OR cc.owner_id IS NULL`;
-      params.push(user.id_user);
-    } else {
-      query += ` WHERE cc.owner_id IS NULL`;
-    }
+    if (user) params.push(user.id_user);
 
     query += ` GROUP BY cc.id_collection ORDER BY cc.updated_at DESC`;
 
