@@ -1399,7 +1399,7 @@ customRoutes.openapi(registerRoute, (c) => {
 
     const passwordHash = hashPassword(body.password);
 
-    let result;
+    let result: { lastInsertRowid: number | bigint };
     try {
       result = db
         .prepare(
