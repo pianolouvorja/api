@@ -20,7 +20,11 @@ const BIBLE_CACHE_DIR = join(process.cwd(), "data", "bible_cache");
 // Versões ES do ecossistema LouvorJA (mesmos ids da prod). Usadas como
 // fallback quando bible_versions ainda não tem linhas language='es'.
 const ES_BIBLE_VERSIONS_FALLBACK = [
-  { id_bible_version: 12, name: "Las Sagradas Escrituras", abbreviation: "SEV" },
+  {
+    id_bible_version: 12,
+    name: "Las Sagradas Escrituras",
+    abbreviation: "SEV",
+  },
   { id_bible_version: 10, name: "Reina-Valera", abbreviation: "RV" },
   { id_bible_version: 11, name: "Reino-Valera 1989", abbreviation: "RVA" },
 ];

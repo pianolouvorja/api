@@ -1,7 +1,9 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { getDb } from "../../db/connection.js";
+import { optionalAuth, requireAuth } from "./auth.middleware.js";
 import {
+  AuthResponseSchema,
   CreateCustomCollectionSchema,
   CreateCustomLyricSchema,
   CreateCustomMusicSchema,
@@ -11,16 +13,14 @@ import {
   CustomLyricsListResponseSchema,
   CustomMusicSchema,
   CustomMusicsListResponseSchema,
+  LoginSchema,
+  MeResponseSchema,
+  // Auth
+  RegisterSchema,
   UpdateCustomCollectionSchema,
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
-  // Auth
-  RegisterSchema,
-  LoginSchema,
-  AuthResponseSchema,
-  MeResponseSchema,
 } from "./custom.schemas.js";
-import { optionalAuth, requireAuth } from "./auth.middleware.js";
 
 const customRoutes = new OpenAPIHono();
 
@@ -32,7 +32,8 @@ const listCollectionsRoute = createRoute({
   method: "get",
   path: "/collections",
   tags: ["custom"],
-  description: "Lista coletâneas customizadas (públicas + minhas se autenticado)",
+  description:
+    "Lista coletâneas customizadas (públicas + minhas se autenticado)",
   middleware: [optionalAuth] as const,
   responses: {
     200: {
@@ -127,7 +128,12 @@ customRoutes.openapi(createCollectionRoute, (c) => {
       .prepare(
         `INSERT INTO custom_collections (name, description, owner_id, author_name) VALUES (?, ?, ?, ?)`,
       )
-      .run(body.name, body.description ?? null, user?.id_user ?? null, body.author_name ?? null);
+      .run(
+        body.name,
+        body.description ?? null,
+        user?.id_user ?? null,
+        body.author_name ?? null,
+      );
 
     const collection = db
       .prepare(`SELECT * FROM custom_collections WHERE id_collection = ?`)
@@ -351,7 +357,10 @@ customRoutes.openapi(deleteCollectionRoute, (c) => {
 
     // Apenas dono pode deletar
     if (collection.owner_id != null && collection.owner_id !== user.id_user) {
-      return c.json({ error: "Sem permissão para remover esta coletânea" }, 403);
+      return c.json(
+        { error: "Sem permissão para remover esta coletânea" },
+        403,
+      );
     }
 
     db.prepare(`DELETE FROM custom_collections WHERE id_collection = ?`).run(
@@ -1342,7 +1351,12 @@ customRoutes.openapi(uploadCustomFileRoute, async (c) => {
 // Auth — login simples e-mail + senha
 // ============================================
 
-import { hashPassword, verifyPassword, generateSessionToken, hashToken } from "./auth.service.js";
+import {
+  generateSessionToken,
+  hashPassword,
+  hashToken,
+  verifyPassword,
+} from "./auth.service.js";
 
 const registerRoute = createRoute({
   method: "post",
@@ -1353,10 +1367,28 @@ const registerRoute = createRoute({
     body: { content: { "application/json": { schema: RegisterSchema } } },
   },
   responses: {
-    201: { content: { "application/json": { schema: AuthResponseSchema } }, description: "Usuário criado" },
-    409: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "E-mail já cadastrado" },
-    422: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Dados inválidos" },
-    500: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Erro interno" },
+    201: {
+      content: { "application/json": { schema: AuthResponseSchema } },
+      description: "Usuário criado",
+    },
+    409: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "E-mail já cadastrado",
+    },
+    422: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Dados inválidos",
+    },
+    500: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Erro interno",
+    },
   },
 });
 
@@ -1370,7 +1402,9 @@ customRoutes.openapi(registerRoute, (c) => {
     let result;
     try {
       result = db
-        .prepare(`INSERT INTO custom_users (email, password_hash, display_name) VALUES (?, ?, ?)`)
+        .prepare(
+          `INSERT INTO custom_users (email, password_hash, display_name) VALUES (?, ?, ?)`,
+        )
         .run(body.email, passwordHash, body.displayName);
     } catch (e: any) {
       if (e.code === "SQLITE_CONSTRAINT_UNIQUE") {
@@ -1381,10 +1415,19 @@ customRoutes.openapi(registerRoute, (c) => {
 
     const userId = Number(result.lastInsertRowid);
     const token = generateSessionToken();
-    db.prepare(`INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`).run(hashToken(token), userId);
+    db.prepare(
+      `INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`,
+    ).run(hashToken(token), userId);
 
     return c.json(
-      { token, user: { id_user: userId, email: body.email, displayName: body.displayName } },
+      {
+        token,
+        user: {
+          id_user: userId,
+          email: body.email,
+          displayName: body.displayName,
+        },
+      },
       201,
     );
   } catch (error) {
@@ -1402,9 +1445,22 @@ const loginRoute = createRoute({
     body: { content: { "application/json": { schema: LoginSchema } } },
   },
   responses: {
-    200: { content: { "application/json": { schema: AuthResponseSchema } }, description: "Login ok" },
-    401: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Credenciais inválidas" },
-    500: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Erro interno" },
+    200: {
+      content: { "application/json": { schema: AuthResponseSchema } },
+      description: "Login ok",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Credenciais inválidas",
+    },
+    500: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Erro interno",
+    },
   },
 });
 
@@ -1414,7 +1470,9 @@ customRoutes.openapi(loginRoute, (c) => {
     const db = getDb();
 
     const user = db
-      .prepare(`SELECT id_user, email, display_name, password_hash FROM custom_users WHERE email = ?`)
+      .prepare(
+        `SELECT id_user, email, display_name, password_hash FROM custom_users WHERE email = ?`,
+      )
       .get(body.email) as any;
 
     if (!user || !verifyPassword(body.password, user.password_hash)) {
@@ -1422,10 +1480,19 @@ customRoutes.openapi(loginRoute, (c) => {
     }
 
     const token = generateSessionToken();
-    db.prepare(`INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`).run(hashToken(token), user.id_user);
+    db.prepare(
+      `INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`,
+    ).run(hashToken(token), user.id_user);
 
     return c.json(
-      { token, user: { id_user: user.id_user, email: user.email, displayName: user.display_name } },
+      {
+        token,
+        user: {
+          id_user: user.id_user,
+          email: user.email,
+          displayName: user.display_name,
+        },
+      },
       200,
     );
   } catch (error) {
@@ -1442,7 +1509,12 @@ const logoutRoute = createRoute({
   request: {},
   responses: {
     204: { description: "Logout ok" },
-    401: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Token inválido" },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Token inválido",
+    },
   },
 });
 
@@ -1452,7 +1524,9 @@ customRoutes.openapi(logoutRoute, (c) => {
   if (!token) return c.json({ error: "Token ausente" }, 401);
 
   const db = getDb();
-  db.prepare(`DELETE FROM custom_sessions WHERE token_hash = ?`).run(hashToken(token));
+  db.prepare(`DELETE FROM custom_sessions WHERE token_hash = ?`).run(
+    hashToken(token),
+  );
   return c.body(null, 204);
 });
 
@@ -1463,8 +1537,16 @@ const meRoute = createRoute({
   description: "Usuário autenticado atual",
   request: {},
   responses: {
-    200: { content: { "application/json": { schema: MeResponseSchema } }, description: "Usuário logado" },
-    401: { content: { "application/json": { schema: z.object({ error: z.string() }) } }, description: "Não autenticado" },
+    200: {
+      content: { "application/json": { schema: MeResponseSchema } },
+      description: "Usuário logado",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
   },
 });
 
@@ -1485,7 +1567,16 @@ customRoutes.openapi(meRoute, (c) => {
 
   if (!session) return c.json({ error: "Não autenticado" }, 401);
 
-  return c.json({ user: { id_user: session.id_user, email: session.email, displayName: session.display_name } }, 200);
+  return c.json(
+    {
+      user: {
+        id_user: session.id_user,
+        email: session.email,
+        displayName: session.display_name,
+      },
+    },
+    200,
+  );
 });
 
 export { customRoutes };
