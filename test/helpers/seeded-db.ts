@@ -16,8 +16,14 @@ export interface SeededDb {
 export async function setupSeededDb(): Promise<SeededDb> {
   const tmpDir = mkdtempSync(join(tmpdir(), "piano-seed-"));
   const originalDbPath = process.env.DB_PATH;
+  const originalOnMiss = process.env.ON_MISS_FETCH;
+  const originalMirror = process.env.MEDIA_MIRROR;
   process.env.DB_PATH = join(tmpDir, "test.db");
   process.env.PORT = "0";
+  // Evita fetch real ao upstream em /json_db/music_{id} (timeouts flaky no CI).
+  process.env.ON_MISS_FETCH = "off";
+  // Evita download on-demand em /file/* (mesmo problema de timeout).
+  process.env.MEDIA_MIRROR = "off";
 
   const { initDb, getDb, closeDb } = await import("../../src/db/connection.js");
 
@@ -94,6 +100,10 @@ export async function setupSeededDb(): Promise<SeededDb> {
     closeDb();
     if (originalDbPath === undefined) delete process.env.DB_PATH;
     else process.env.DB_PATH = originalDbPath;
+    if (originalOnMiss === undefined) delete process.env.ON_MISS_FETCH;
+    else process.env.ON_MISS_FETCH = originalOnMiss;
+    if (originalMirror === undefined) delete process.env.MEDIA_MIRROR;
+    else process.env.MEDIA_MIRROR = originalMirror;
     rmSync(tmpDir, { recursive: true, force: true });
   };
 
