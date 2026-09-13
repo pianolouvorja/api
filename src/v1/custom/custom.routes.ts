@@ -14,6 +14,8 @@ import {
   CustomMusicSchema,
   CustomMusicsListResponseSchema,
   LoginSchema,
+  ForgotPasswordSchema,
+  ResetPasswordSchema,
   MeResponseSchema,
   // Auth
   RegisterSchema,
@@ -1577,6 +1579,133 @@ customRoutes.openapi(meRoute, (c) => {
     },
     200,
   );
+});
+
+// ============================================
+// Auth — reset de senha (sem SMTP)
+// ============================================
+// Fluxo: usuário pede reset → API gera token opaco de 1h (uso único) → o
+// token é ENTREGUE AO USUÁRIO por canal externo (suporte/tela admin do
+// operador). Sem SMTP nesta fase: nada é enviado automaticamente.
+// forgot-password responde 200 SEMPRE (não revela se o e-mail existe).
+
+const forgotPasswordRoute = createRoute({
+  method: "post",
+  path: "/auth/forgot-password",
+  tags: ["custom"],
+  description: "Gera token de reset (uso único, 1h). Resposta sempre 200.",
+  request: {
+    body: { content: { "application/json": { schema: ForgotPasswordSchema } } },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            /** Presente SOMENTE quando RESET_TOKEN_EXPOSE=1 (dev/self-host sem SMTP). */
+            token: z.string().optional(),
+          }),
+        },
+      },
+      description: "Token gerado (ou resposta neutra se e-mail inexistente)",
+    },
+    500: {
+      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      description: "Erro interno",
+    },
+  },
+});
+
+customRoutes.openapi(forgotPasswordRoute, (c) => {
+  try {
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const user = db
+      .prepare(`SELECT id_user FROM custom_users WHERE email = ?`)
+      .get(body.email) as { id_user: number } | undefined;
+
+    // Sem exposição de existência: resposta idêntica nos dois casos.
+    if (!user) return c.json({ ok: true }, 200);
+
+    const token = generateSessionToken();
+    const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `UPDATE custom_users SET reset_token_hash = ?, reset_token_expires = ? WHERE id_user = ?`,
+    ).run(hashToken(token), expires, user.id_user);
+
+    // Modo self-host/dev: expõe o token na resposta pra não exigir SMTP.
+    // Produção com suporte: o token vai pelo canal de suporte (banco).
+    if (process.env.RESET_TOKEN_EXPOSE === "1") {
+      return c.json({ ok: true, token }, 200);
+    }
+    return c.json({ ok: true }, 200);
+  } catch {
+    return c.json({ error: "Erro interno" }, 500);
+  }
+});
+
+const resetPasswordRoute = createRoute({
+  method: "post",
+  path: "/auth/reset-password",
+  tags: ["custom"],
+  description: "Troca a senha usando token de reset (uso único, 1h).",
+  request: {
+    body: { content: { "application/json": { schema: ResetPasswordSchema } } },
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: z.object({ ok: z.boolean() }) } },
+      description: "Senha alterada",
+    },
+    400: {
+      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      description: "Token inválido ou expirado",
+    },
+    500: {
+      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      description: "Erro interno",
+    },
+  },
+});
+
+customRoutes.openapi(resetPasswordRoute, (c) => {
+  try {
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const user = db
+      .prepare(
+        `SELECT id_user, reset_token_expires FROM custom_users WHERE reset_token_hash = ?`,
+      )
+      .get(hashToken(body.token)) as
+      | { id_user: number; reset_token_expires: string }
+      | undefined;
+
+    if (
+      !user ||
+      !user.reset_token_expires ||
+      new Date(user.reset_token_expires).getTime() < Date.now()
+    ) {
+      return c.json({ error: "Token inválido ou expirado" }, 400);
+    }
+
+    const passwordHash = hashPassword(body.password);
+    // Uso único: limpa o token ao trocar a senha. Invalida também todas as
+    // sessões abertas (senha vazou — melhor derrubar tudo).
+    const sweep = db.transaction(() => {
+      db.prepare(
+        `UPDATE custom_users SET password_hash = ?, reset_token_hash = NULL, reset_token_expires = NULL WHERE id_user = ?`,
+      ).run(passwordHash, user.id_user);
+      db.prepare(`DELETE FROM custom_sessions WHERE id_user = ?`).run(user.id_user);
+    });
+    sweep();
+
+    return c.json({ ok: true }, 200);
+  } catch {
+    return c.json({ error: "Erro interno" }, 500);
+  }
 });
 
 export { customRoutes };

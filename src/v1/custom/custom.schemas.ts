@@ -164,6 +164,18 @@ export const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
+/** Pedido de reset: só o e-mail. Resposta SEMPRE 200 (não revela se o
+ * e-mail existe — evita enumeração de contas). */
+export const ForgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+/** Efetiva o reset: token (válido, não expirado, 1h) + senha nova. */
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(16),
+  password: z.string().min(8),
+});
+
 export const AuthResponseSchema = z.object({
   token: z.string().min(1),
   user: z.object({
