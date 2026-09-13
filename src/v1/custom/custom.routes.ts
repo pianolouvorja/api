@@ -1359,6 +1359,7 @@ import {
   hashToken,
   verifyPassword,
 } from "./auth.service.js";
+import { sendResetTokenEmail, smtpConfigured } from "./mail.service.js";
 
 const registerRoute = createRoute({
   method: "post",
@@ -1617,14 +1618,18 @@ const forgotPasswordRoute = createRoute({
   },
 });
 
-customRoutes.openapi(forgotPasswordRoute, (c) => {
+customRoutes.openapi(forgotPasswordRoute, async (c) => {
   try {
     const body = c.req.valid("json");
     const db = getDb();
 
     const user = db
-      .prepare(`SELECT id_user FROM custom_users WHERE email = ?`)
-      .get(body.email) as { id_user: number } | undefined;
+      .prepare(
+        `SELECT id_user, display_name FROM custom_users WHERE email = ?`,
+      )
+      .get(body.email) as
+      | { id_user: number; display_name: string }
+      | undefined;
 
     // Sem exposição de existência: resposta idêntica nos dois casos.
     if (!user) return c.json({ ok: true }, 200);
@@ -1635,8 +1640,19 @@ customRoutes.openapi(forgotPasswordRoute, (c) => {
       `UPDATE custom_users SET reset_token_hash = ?, reset_token_expires = ? WHERE id_user = ?`,
     ).run(hashToken(token), expires, user.id_user);
 
-    // Modo self-host/dev: expõe o token na resposta pra não exigir SMTP.
-    // Produção com suporte: o token vai pelo canal de suporte (banco).
+    // 1) SMTP configurado → envia o token por e-mail (fluxo primário).
+    if (smtpConfigured()) {
+      const sent = await sendResetTokenEmail(
+        body.email,
+        user.display_name,
+        token,
+      );
+      if (sent) return c.json({ ok: true }, 200);
+      // SMTP falhou → cai pro fallback abaixo.
+    }
+
+    // 2) Fallback self-host/dev: expõe o token na resposta quando
+    // RESET_TOKEN_EXPOSE=1 (não exige canal de suporte).
     if (process.env.RESET_TOKEN_EXPOSE === "1") {
       return c.json({ ok: true, token }, 200);
     }
