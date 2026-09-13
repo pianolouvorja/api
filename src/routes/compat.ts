@@ -287,24 +287,26 @@ compatRoutes.get("/json_db/:file", async (c) => {
     return handleAlbumDetail(c, db, idAlbum);
   }
 
-  // pt_bible_book
-  if (file === "pt_bible_book") {
+  // pt_bible_book / es_bible_book
+  const bookLangMatch = file.match(/^(pt|es)_bible_book$/);
+  if (bookLangMatch) {
     const books = db
       .prepare(
         `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
-         FROM bible_books WHERE id_language = 'pt' ORDER BY book_number`,
+         FROM bible_books WHERE id_language = ? ORDER BY book_number`,
       )
-      .all();
+      .all(bookLangMatch[1]);
     return c.json(books);
   }
 
-  // pt_bible_version
-  if (file === "pt_bible_version") {
+  // pt_bible_version / es_bible_version
+  const versionLangMatch = file.match(/^(pt|es)_bible_version$/);
+  if (versionLangMatch) {
     const versions = db
       .prepare(
-        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'pt' ORDER BY name`,
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = ? ORDER BY name`,
       )
-      .all();
+      .all(versionLangMatch[1]);
     return c.json(versions);
   }
 
