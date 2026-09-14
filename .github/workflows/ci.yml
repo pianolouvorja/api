@@ -73,6 +73,8 @@ jobs:
           context: .
           push: false
           tags: piano-api:latest
+          provenance: false
+          sbom: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -89,10 +91,20 @@ jobs:
           push: false
           tags: piano-api:smoke
           load: true
+          # load:true incompatível com attestations default do buildx
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Run container and check /v1/health
         run: |
-          docker run -d --rm --name smoke -p 3100:3100 piano-api:smoke
-          for i in $(seq 1 15); do
+          docker run -d --rm --name smoke -p 3100:3100 \
+            -e NODE_ENV=production \
+            -e PORT=3100 \
+            -e DB_PATH=/app/data/catalog.db \
+            -e MEDIA_DIR=/app/media \
+            piano-api:smoke
+          for i in $(seq 1 20); do
             if curl -fsS http://localhost:3100/v1/health > /dev/null 2>&1; then
               echo "✅ health check OK"
               docker stop smoke
@@ -100,7 +112,7 @@ jobs:
             fi
             sleep 2
           done
-          echo "::error::/v1/health não respondeu em 30s"
+          echo "::error::/v1/health não respondeu em 40s"
           docker logs smoke
           docker stop smoke || true
           exit 1
