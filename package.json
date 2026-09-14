@@ -27,6 +27,7 @@
     "better-sqlite3": "^11.0.0",
     "hono": "^4.13.7",
     "kysely": "^0.29.5",
+    "nodemailer": "^10.0.9",
     "ws": "^8.21.3",
     "zod": "^4.5.4"
   },
@@ -39,6 +40,7 @@
     "@biomejs/biome": "^2.5.12",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^26.4.1",
+    "@types/nodemailer": "^8.0.1",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-istanbul": "^5.0.0",
     "husky": "^9.1.7",
