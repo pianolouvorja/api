@@ -70,7 +70,7 @@ export function initDb(): void {
       let inQuote = false;
       for (let i = 0; i < line.length; i++) {
         const ch = line[i];
-        if (ch === "'" ) inQuote = !inQuote;
+        if (ch === "'") inQuote = !inQuote;
         if (ch === "-" && !inQuote && line[i + 1] === "-") break;
         clean += ch;
       }
