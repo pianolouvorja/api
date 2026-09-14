@@ -1386,7 +1386,12 @@ import {
   hashToken,
   verifyPassword,
 } from "./auth.service.js";
-import { sendResetTokenEmail, smtpConfigured } from "./mail.service.js";
+import {
+  sendNewLoginEmail,
+  sendResetTokenEmail,
+  sendWelcomeEmail,
+  smtpConfigured,
+} from "./mail.service.js";
 
 const registerRoute = createRoute({
   method: "post",
@@ -1448,6 +1453,9 @@ customRoutes.openapi(registerRoute, (c) => {
     db.prepare(
       `INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`,
     ).run(hashToken(token), userId);
+
+    // Boas-vindas: fire-and-forget, nunca bloqueia nem falha o registro
+    void sendWelcomeEmail(body.email, body.displayName).catch(() => {});
 
     return c.json(
       {
@@ -1513,6 +1521,13 @@ customRoutes.openapi(loginRoute, (c) => {
     db.prepare(
       `INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`,
     ).run(hashToken(token), user.id_user);
+
+    // Aviso de novo login: fire-and-forget (data local do servidor, PT-BR)
+    void sendNewLoginEmail(
+      user.email,
+      user.display_name ?? "usuário",
+      new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+    ).catch(() => {});
 
     return c.json(
       {

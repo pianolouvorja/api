@@ -1,5 +1,9 @@
 import { createTransport } from "nodemailer";
-import { renderResetPasswordEmail } from "./email-templates.js";
+import {
+  renderNewLoginEmail,
+  renderResetPasswordEmail,
+  renderWelcomeEmail,
+} from "./email-templates.js";
 
 /**
  * Envio de e-mail transacional via SMTP (Hostinger — noreply@).
@@ -74,4 +78,66 @@ export async function sendResetTokenEmail(
     console.error("[mail] falha ao enviar token de reset:", error);
     return false;
   }
+}
+
+/** Genérico: envia e-mail transacional (html da marca + texto puro). */
+async function sendEmail(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<boolean> {
+  try {
+    const transport = getTransporter();
+    await transport.sendMail({
+      from: process.env.SMTP_FROM,
+      to,
+      subject,
+      text,
+      html,
+    });
+    return true;
+  } catch (error) {
+    console.error(`[mail] falha ao enviar "${subject}" para ${to}:`, error);
+    return false;
+  }
+}
+
+/** Boas-vindas pós-registro. Fire-and-forget: nunca bloqueia a rota. */
+export async function sendWelcomeEmail(
+  to: string,
+  displayName: string,
+): Promise<boolean> {
+  if (!smtpConfigured()) return false;
+  return sendEmail(
+    to,
+    "Bem-vindo ao Piano LouvorJA",
+    renderWelcomeEmail(displayName),
+    [
+      `Olá, ${displayName}!`,
+      "Sua conta foi criada com sucesso no Piano LouvorJA.",
+      "Agora você pode criar coletâneas personalizadas no editor de letras e acessá-las de qualquer lugar.",
+      "— LouvorJA PIANO",
+    ].join("\n"),
+  );
+}
+
+/** Aviso de novo login. Fire-and-forget. */
+export async function sendNewLoginEmail(
+  to: string,
+  displayName: string,
+  when: string,
+): Promise<boolean> {
+  if (!smtpConfigured()) return false;
+  return sendEmail(
+    to,
+    "LouvorJA — Novo login na sua conta",
+    renderNewLoginEmail(displayName, when),
+    [
+      `Olá, ${displayName}.`,
+      `Um novo login na sua conta foi realizado em ${when}.`,
+      "Se não foi você, redefina sua senha imediatamente.",
+      "— LouvorJA PIANO",
+    ].join("\n"),
+  );
 }

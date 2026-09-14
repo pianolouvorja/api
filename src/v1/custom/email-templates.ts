@@ -47,7 +47,35 @@ function shell(title: string, inner: string): string {
 </table>`;
 }
 
-/** E-mail de reset de senha — HTML com tokens da marca. */
+/** E-mail de boas-vindas após registro. */
+export function renderWelcomeEmail(displayName: string): string {
+  const inner = [
+    p(`Olá, ${displayName}!`),
+    p(
+      "Sua conta foi criada com sucesso. Agora você pode criar coletâneas personalizadas no editor de letras do Piano LouvorJA e acessá-las de qualquer lugar.",
+    ),
+    p(
+      "Dica: crie suas coletâneas mesmo sem estar logado — elas ficam salvas no dispositivo — e faça login quando quiser publicá-las para a sua igreja.",
+    ),
+  ].join("");
+  return shell("Bem-vindo ao Piano LouvorJA", inner);
+}
+
+/** Aviso de nova sessão (login em novo dispositivo). */
+export function renderNewLoginEmail(
+  displayName: string,
+  when: string,
+): string {
+  const inner = [
+    p(`Olá, ${displayName}.`),
+    p(`Um novo login na sua conta foi realizado em ${when}.`),
+    p(
+      "Se foi você, ignore este e-mail. Se NÃO foi você, redefina sua senha imediatamente — todos os dispositivos conectados serão desconectados.",
+    ),
+  ].join("");
+  return shell("Novo login na sua conta", inner);
+}
+
 export function renderResetPasswordEmail(
   displayName: string,
   token: string,
