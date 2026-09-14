@@ -287,25 +287,55 @@ compatRoutes.get("/json_db/:file", async (c) => {
     return handleAlbumDetail(c, db, idAlbum);
   }
 
-  // pt_bible_book
-  if (file === "pt_bible_book") {
+  // pt_bible_book / es_bible_book
+  const bookLangMatch = file.match(/^(pt|es)_bible_book$/);
+  if (bookLangMatch) {
     const books = db
       .prepare(
         `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
-         FROM bible_books WHERE id_language = 'pt' ORDER BY book_number`,
+         FROM bible_books WHERE id_language = ? ORDER BY book_number`,
       )
-      .all();
+      .all(bookLangMatch[1]);
     return c.json(books);
   }
 
-  // pt_bible_version
-  if (file === "pt_bible_version") {
+  // pt_bible_version / es_bible_version
+  const versionLangMatch = file.match(/^(pt|es)_bible_version$/);
+  if (versionLangMatch) {
     const versions = db
       .prepare(
-        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'pt' ORDER BY name`,
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = ? ORDER BY name`,
+      )
+      .all(versionLangMatch[1]);
+    return c.json(versions);
+  }
+
+  // es_bible_book — espelha o formato da prod (ids 67-132, offset +66).
+  // Fonte: dados ES do upstream, servidos do DB quando populados; fallback
+  // deriva do cache de capítulos bible_{v}_{book}_{chapter} (books 67-132).
+  if (file === "es_bible_book") {
+    const books = db
+      .prepare(
+        `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
+         FROM bible_books WHERE id_book BETWEEN 67 AND 132 ORDER BY book_number`,
       )
       .all();
-    return c.json(versions);
+    if (books.length > 0) return c.json(books);
+
+    // Fallback: busca um capítulo ES no upstream e extrai os nomes não é viável
+    // — em vez disso, serve o manifest estático equivalente ao da prod.
+    return serveEsBibleBookFallback(c);
+  }
+
+  // es_bible_version — versões ES do ecossistema (SEV=10, RV=11, RVA=12).
+  if (file === "es_bible_version") {
+    const versions = db
+      .prepare(
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'es' ORDER BY name`,
+      )
+      .all();
+    if (versions.length > 0) return c.json(versions);
+    return c.json(ES_BIBLE_VERSIONS_FALLBACK);
   }
 
   // es_bible_book — espelha o formato da prod (ids 67-132, offset +66).
