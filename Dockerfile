@@ -23,5 +23,5 @@ COPY static/ ./static/
 RUN mkdir -p data media
 EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-CMD node -e "fetch('http://localhost:3100/v1/health').then(r=>{if(!r.ok)throw new Error('unhealthy')}).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://localhost:3100/v1/health').then(r=>{if(!r.ok)throw new Error('unhealthy')}).catch(()=>process.exit(1))"
 CMD ["node", "dist/index.js"]
