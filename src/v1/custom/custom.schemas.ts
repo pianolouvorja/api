@@ -27,12 +27,14 @@ export const CreateCustomCollectionSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   author_name: z.string().max(80).nullable().optional(),
+  visibility: z.enum(["public", "private"]).optional(),
 });
 
 export const UpdateCustomCollectionSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
   cover_url: z.string().nullable().optional(),
+  visibility: z.enum(["public", "private"]).optional(),
 });
 
 // Custom Musics

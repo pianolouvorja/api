@@ -58,16 +58,21 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
     const db = getDb();
     const user = c.get("user") as { id_user: number } | undefined;
 
-    let query = `
+    // api#82: privada só o dono vê. Deslogado vê apenas públicas.
+    // Ordem dos placeholders: 1º o do is_owner (SELECT), 2º o do WHERE.
+    const params: any[] = [];
+    const query = `
       SELECT cc.*, COUNT(cm.id_music) as musics_count,
-             ${user ? "(cc.owner_id = ?)" : "0"} as is_owner
+             ${user ? "?" : "0"} as is_owner
       FROM custom_collections cc
       LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
+      WHERE ${user ? "(cc.visibility = 'public' OR cc.owner_id = ?)" : "cc.visibility = 'public'"}
+      GROUP BY cc.id_collection ORDER BY cc.updated_at DESC
     `;
-    const params: any[] = [];
-    if (user) params.push(user.id_user);
-
-    query += ` GROUP BY cc.id_collection ORDER BY cc.updated_at DESC`;
+    if (user) {
+      params.push(user.id_user); // is_owner
+      params.push(user.id_user); // filtro de visibilidade
+    }
 
     const collections = db.prepare(query).all(...params) as any[];
 
@@ -111,6 +116,12 @@ const createCollectionRoute = createRoute({
       },
       description: "Dados inválidos",
     },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado (api#82: escrita exige identidade)",
+    },
     500: {
       content: {
         "application/json": { schema: z.object({ error: z.string() }) },
@@ -120,21 +131,26 @@ const createCollectionRoute = createRoute({
   },
 });
 
-customRoutes.openapi(createCollectionRoute, (c) => {
+customRoutes.openapi(createCollectionRoute, async (c) => {
   try {
     const body = c.req.valid("json");
     const db = getDb();
     const user = c.get("user") as { id_user: number } | undefined;
 
+    // api#82 hardening: escrita na API exige identidade (sem auth cria
+    // local no cliente — a API nunca recebe anônimo).
+    if (!user) return c.json({ error: "Não autenticado" }, 401);
+
     const result = db
       .prepare(
-        `INSERT INTO custom_collections (name, description, owner_id, author_name) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO custom_collections (name, description, owner_id, author_name, visibility) VALUES (?, ?, ?, ?, ?)`,
       )
       .run(
         body.name,
         body.description ?? null,
-        user?.id_user ?? null,
+        user.id_user,
         body.author_name ?? null,
+        body.visibility ?? "public",
       );
 
     const collection = db
@@ -153,6 +169,7 @@ const getCollectionRoute = createRoute({
   path: "/collections/{id}",
   tags: ["custom"],
   description: "Detalhe de uma coletânea customizada",
+  middleware: [optionalAuth] as const,
   request: {
     params: z.object({
       id: z.string().openapi({ description: "ID da coletânea", example: "1" }),
@@ -182,6 +199,7 @@ customRoutes.openapi(getCollectionRoute, (c) => {
   try {
     const { id } = c.req.valid("param");
     const db = getDb();
+    const user = c.get("user") as { id_user: number } | undefined;
 
     const collection = db
       .prepare(
@@ -194,6 +212,14 @@ customRoutes.openapi(getCollectionRoute, (c) => {
       .get(parseInt(id, 10)) as any;
 
     if (!collection) {
+      return c.json({ error: "Coletânea não encontrada" }, 404);
+    }
+
+    // api#82: privada só o dono acessa (404, não 403 — não revela existência)
+    if (
+      collection.visibility === "private" &&
+      (!user || collection.owner_id !== user.id_user)
+    ) {
       return c.json({ error: "Coletânea não encontrada" }, 404);
     }
 
@@ -272,12 +298,13 @@ customRoutes.openapi(updateCollectionRoute, (c) => {
 
     db.prepare(
       `UPDATE custom_collections
-       SET name = ?, description = ?, cover_url = ?, updated_at = CURRENT_TIMESTAMP
+       SET name = ?, description = ?, cover_url = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id_collection = ?`,
     ).run(
       body.name ?? collection.name,
       body.description ?? collection.description,
       body.cover_url !== undefined ? body.cover_url : collection.cover_url,
+      body.visibility ?? collection.visibility ?? "public",
       parseInt(id, 10),
     );
 
