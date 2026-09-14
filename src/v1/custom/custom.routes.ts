@@ -13,12 +13,12 @@ import {
   CustomLyricsListResponseSchema,
   CustomMusicSchema,
   CustomMusicsListResponseSchema,
-  LoginSchema,
   ForgotPasswordSchema,
-  ResetPasswordSchema,
+  LoginSchema,
   MeResponseSchema,
   // Auth
   RegisterSchema,
+  ResetPasswordSchema,
   UpdateCustomCollectionSchema,
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
@@ -1654,7 +1654,9 @@ const forgotPasswordRoute = createRoute({
       description: "Token gerado (ou resposta neutra se e-mail inexistente)",
     },
     500: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Erro interno",
     },
   },
@@ -1666,12 +1668,8 @@ customRoutes.openapi(forgotPasswordRoute, async (c) => {
     const db = getDb();
 
     const user = db
-      .prepare(
-        `SELECT id_user, display_name FROM custom_users WHERE email = ?`,
-      )
-      .get(body.email) as
-      | { id_user: number; display_name: string }
-      | undefined;
+      .prepare(`SELECT id_user, display_name FROM custom_users WHERE email = ?`)
+      .get(body.email) as { id_user: number; display_name: string } | undefined;
 
     // Sem exposição de existência: resposta idêntica nos dois casos.
     if (!user) return c.json({ ok: true }, 200);
@@ -1714,15 +1712,21 @@ const resetPasswordRoute = createRoute({
   },
   responses: {
     200: {
-      content: { "application/json": { schema: z.object({ ok: z.boolean() }) } },
+      content: {
+        "application/json": { schema: z.object({ ok: z.boolean() }) },
+      },
       description: "Senha alterada",
     },
     400: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Token inválido ou expirado",
     },
     500: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Erro interno",
     },
   },
@@ -1756,7 +1760,9 @@ customRoutes.openapi(resetPasswordRoute, (c) => {
       db.prepare(
         `UPDATE custom_users SET password_hash = ?, reset_token_hash = NULL, reset_token_expires = NULL WHERE id_user = ?`,
       ).run(passwordHash, user.id_user);
-      db.prepare(`DELETE FROM custom_sessions WHERE id_user = ?`).run(user.id_user);
+      db.prepare(`DELETE FROM custom_sessions WHERE id_user = ?`).run(
+        user.id_user,
+      );
     });
     sweep();
 

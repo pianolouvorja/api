@@ -62,10 +62,7 @@ export function renderWelcomeEmail(displayName: string): string {
 }
 
 /** Aviso de nova sessão (login em novo dispositivo). */
-export function renderNewLoginEmail(
-  displayName: string,
-  when: string,
-): string {
+export function renderNewLoginEmail(displayName: string, when: string): string {
   const inner = [
     p(`Olá, ${displayName}.`),
     p(`Um novo login na sua conta foi realizado em ${when}.`),
@@ -82,10 +79,14 @@ export function renderResetPasswordEmail(
 ): string {
   const inner = [
     p(`Olá, ${displayName}.`),
-    p("Recebemos um pedido de reset de senha para sua conta. Use o token abaixo no app:"),
+    p(
+      "Recebemos um pedido de reset de senha para sua conta. Use o token abaixo no app:",
+    ),
     codeBox(token),
     p("Este token expira em 1 hora e pode ser usado uma única vez."),
-    p("Se você não pediu isso, ignore este e-mail — sua senha continua a mesma."),
+    p(
+      "Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.",
+    ),
   ].join("");
   return shell("Reset de senha", inner);
 }
