@@ -1,4 +1,5 @@
 import { createTransport } from "nodemailer";
+import { renderResetPasswordEmail } from "./email-templates.js";
 
 /**
  * Envio de e-mail transacional via SMTP (Hostinger — noreply@).
@@ -48,23 +49,25 @@ export async function sendResetTokenEmail(
 ): Promise<boolean> {
   const transport = getTransporter();
   const expiresLabel = "1 hora";
+  const textBody = [
+    `Olá, ${displayName}.`,
+    "",
+    `Seu token de reset de senha é:`,
+    "",
+    token,
+    "",
+    `Ele expira em ${expiresLabel} e pode ser usado uma única vez.`,
+    "Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.",
+    "",
+    "— LouvorJA PIANO",
+  ].join("\n");
   try {
     await transport.sendMail({
       from: process.env.SMTP_FROM,
       to,
-      subject: "LouvorJA — Token de reset de senha",
-      text: [
-        `Olá, ${displayName}.`,
-        "",
-        `Seu token de reset de senha é:`,
-        "",
-        token,
-        "",
-        `Ele expira em ${expiresLabel} e pode ser usado uma única vez.`,
-        "Se você não pediu isso, ignore este e-mail — sua senha continua a mesma.",
-        "",
-        "— LouvorJA PIANO",
-      ].join("\n"),
+      subject: "LouvorJA — Reset de senha",
+      text: textBody,
+      html: renderResetPasswordEmail(displayName, token),
     });
     return true;
   } catch (error) {
