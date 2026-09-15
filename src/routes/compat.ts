@@ -17,6 +17,34 @@ export const compatRoutes = new Hono();
 const UPSTREAM = process.env.UPSTREAM_API ?? "https://api.louvorja.com.br";
 const BIBLE_CACHE_DIR = join(process.cwd(), "data", "bible_cache");
 
+// Versões ES do ecossistema LouvorJA (mesmos ids da prod). Usadas como
+// fallback quando bible_versions ainda não tem linhas language='es'.
+const ES_BIBLE_VERSIONS_FALLBACK = [
+  {
+    id_bible_version: 12,
+    name: "Las Sagradas Escrituras",
+    abbreviation: "SEV",
+  },
+  { id_bible_version: 10, name: "Reina-Valera", abbreviation: "RV" },
+  { id_bible_version: 11, name: "Reino-Valera 1989", abbreviation: "RVA" },
+];
+
+// Fallback de es_bible_book: extrai os nomes do próprio upstream da prod
+// (1 request, cacheado em bible_cache/es_bible_book.json). Espelha o
+// contrato da prod (ids 67-132).
+let esBookFallbackCache: unknown = null;
+async function serveEsBibleBookFallback(c: any) {
+  if (esBookFallbackCache) return c.json(esBookFallbackCache);
+  try {
+    const res = await fetchUpstream(`${UPSTREAM}/json_db/es_bible_book`);
+    const data = JSON.parse(await res.text());
+    esBookFallbackCache = data;
+    return c.json(data);
+  } catch {
+    return c.json({ error: "Arquivo nao encontrado!" }, 404);
+  }
+}
+
 // ==============================================
 // GET /json_db — manifest de arquivos disponiveis
 // ==============================================
@@ -278,6 +306,34 @@ compatRoutes.get("/json_db/:file", async (c) => {
       )
       .all();
     return c.json(versions);
+  }
+
+  // es_bible_book — espelha o formato da prod (ids 67-132, offset +66).
+  // Fonte: dados ES do upstream, servidos do DB quando populados; fallback
+  // deriva do cache de capítulos bible_{v}_{book}_{chapter} (books 67-132).
+  if (file === "es_bible_book") {
+    const books = db
+      .prepare(
+        `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
+         FROM bible_books WHERE id_book BETWEEN 67 AND 132 ORDER BY book_number`,
+      )
+      .all();
+    if (books.length > 0) return c.json(books);
+
+    // Fallback: busca um capítulo ES no upstream e extrai os nomes não é viável
+    // — em vez disso, serve o manifest estático equivalente ao da prod.
+    return serveEsBibleBookFallback(c);
+  }
+
+  // es_bible_version — versões ES do ecossistema (SEV=10, RV=11, RVA=12).
+  if (file === "es_bible_version") {
+    const versions = db
+      .prepare(
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'es' ORDER BY name`,
+      )
+      .all();
+    if (versions.length > 0) return c.json(versions);
+    return c.json(ES_BIBLE_VERSIONS_FALLBACK);
   }
 
   // bible_{version}_{book}_{chapter} — lazy proxy
