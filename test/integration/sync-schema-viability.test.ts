@@ -1,5 +1,14 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { initDb, closeDb, getDb } from "../../src/db/connection.js";
+
+// DB temporario dedicado ANTES de qualquer import (setup-db.ts não é
+// setupFile global — sem isto cairia no data/catalog.db real!)
+const tmpDir = mkdtempSync(join(tmpdir(), "plj-viab-"));
+process.env.DB_PATH = join(tmpDir, "viab.db");
+
+const { initDb, closeDb, getDb } = await import("../../src/db/connection.js");
 
 /**
  * P1 — prova de viabilidade do schema de sync (gauntlet coletâneas offline):
@@ -12,6 +21,7 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
   });
   afterAll(() => {
     closeDb();
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it("colunas de sync existem nas 3 tabelas", () => {
