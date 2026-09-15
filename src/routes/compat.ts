@@ -29,6 +29,62 @@ const ES_BIBLE_VERSIONS_FALLBACK = [
   { id_bible_version: 11, name: "Reino-Valera 1989", abbreviation: "RVA" },
 ];
 
+const VERSION_ABBREVIATION_BY_NAME: Array<{ match: RegExp; abbr: string }> = [
+  { match: /nova\s+almeida\s+atualizada/i, abbr: "NAA" },
+  { match: /almeida\s+corrigida\s+e\s+revisada\s+fiel/i, abbr: "ACRF" },
+  { match: /almeida\s+corrigida\s+e\s+fiel/i, abbr: "ACF" },
+  { match: /almeida\s+revisada\s+imprensa/i, abbr: "ARIB" },
+  { match: /almeida\s+revista\s+e\s+atualizada/i, abbr: "ARA" },
+  { match: /almeida\s+revista\s+e\s+corrigida/i, abbr: "ARC" },
+  { match: /king\s+james\s+atualizada/i, abbr: "KJA" },
+  { match: /nova\s+vers[aã]o\s+internacional/i, abbr: "NVI" },
+  { match: /sagradas\s+escrituras/i, abbr: "SEV" },
+  { match: /reina[-\s]?valera\s*1989/i, abbr: "RVA" },
+  { match: /reina[-\s]?valera/i, abbr: "RV" },
+];
+
+function cleanCatalogText(value: unknown): string {
+  if (value == null) return "";
+  const text = String(value).trim();
+  if (
+    !text ||
+    text.toLowerCase() === "null" ||
+    text.toLowerCase() === "undefined"
+  ) {
+    return "";
+  }
+  return text;
+}
+
+function resolveVersionAbbreviation(
+  abbreviation: unknown,
+  name: unknown,
+  versionId?: unknown,
+): string {
+  const fromField = cleanCatalogText(abbreviation);
+  if (fromField) return fromField;
+
+  const versionName = cleanCatalogText(name);
+  for (const entry of VERSION_ABBREVIATION_BY_NAME) {
+    if (entry.match.test(versionName)) return entry.abbr;
+  }
+
+  const idText = cleanCatalogText(versionId);
+  if (/^[a-z]{2,6}$/i.test(idText)) return idText.toUpperCase();
+  return "";
+}
+
+function withVersionAbbreviation<T extends Record<string, unknown>>(row: T): T {
+  return {
+    ...row,
+    abbreviation: resolveVersionAbbreviation(
+      row.abbreviation,
+      row.name,
+      row.id_bible_version ?? row.id_version,
+    ),
+  };
+}
+
 // Fallback de es_bible_book: extrai os nomes do próprio upstream da prod
 // (1 request, cacheado em bible_cache/es_bible_book.json). Espelha o
 // contrato da prod (ids 67-132).
@@ -306,8 +362,67 @@ compatRoutes.get("/json_db/:file", async (c) => {
       .prepare(
         `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = ? ORDER BY name`,
       )
-      .all(versionLangMatch[1]);
+      .all(versionLangMatch[1])
+      .map((row) => withVersionAbbreviation(row as Record<string, unknown>));
     return c.json(versions);
+  }
+
+  // es_bible_book — espelha o formato da prod (ids 67-132, offset +66).
+  // Fonte: dados ES do upstream, servidos do DB quando populados; fallback
+  // deriva do cache de capítulos bible_{v}_{book}_{chapter} (books 67-132).
+  if (file === "es_bible_book") {
+    const books = db
+      .prepare(
+        `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
+         FROM bible_books WHERE id_book BETWEEN 67 AND 132 ORDER BY book_number`,
+      )
+      .all();
+    if (books.length > 0) return c.json(books);
+
+    // Fallback: busca um capítulo ES no upstream e extrai os nomes não é viável
+    // — em vez disso, serve o manifest estático equivalente ao da prod.
+    return serveEsBibleBookFallback(c);
+  }
+
+  // es_bible_version — versões ES do ecossistema (SEV=10, RV=11, RVA=12).
+  if (file === "es_bible_version") {
+    const versions = db
+      .prepare(
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'es' ORDER BY name`,
+      )
+      .all()
+      .map((row) => withVersionAbbreviation(row as Record<string, unknown>));
+    if (versions.length > 0) return c.json(versions);
+    return c.json(ES_BIBLE_VERSIONS_FALLBACK);
+  }
+
+  // es_bible_book — espelha o formato da prod (ids 67-132, offset +66).
+  // Fonte: dados ES do upstream, servidos do DB quando populados; fallback
+  // deriva do cache de capítulos bible_{v}_{book}_{chapter} (books 67-132).
+  if (file === "es_bible_book") {
+    const books = db
+      .prepare(
+        `SELECT id_book AS id_bible_book, book_number, name, chapters, abbreviation, testament, keywords, color
+         FROM bible_books WHERE id_book BETWEEN 67 AND 132 ORDER BY book_number`,
+      )
+      .all();
+    if (books.length > 0) return c.json(books);
+
+    // Fallback: busca um capítulo ES no upstream e extrai os nomes não é viável
+    // — em vez disso, serve o manifest estático equivalente ao da prod.
+    return serveEsBibleBookFallback(c);
+  }
+
+  // es_bible_version — versões ES do ecossistema (SEV=10, RV=11, RVA=12).
+  if (file === "es_bible_version") {
+    const versions = db
+      .prepare(
+        `SELECT id_version AS id_bible_version, name, abbreviation FROM bible_versions WHERE language = 'es' ORDER BY name`,
+      )
+      .all()
+      .map((row) => withVersionAbbreviation(row as Record<string, unknown>));
+    if (versions.length > 0) return c.json(versions);
+    return c.json(ES_BIBLE_VERSIONS_FALLBACK);
   }
 
   // es_bible_book — espelha o formato da prod (ids 67-132, offset +66).
