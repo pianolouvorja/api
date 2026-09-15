@@ -4,10 +4,10 @@
  * documentado em .planning/gauntlet/SYNC_API.md (B16).
  */
 import { Hono } from "hono";
-import { getDb } from "../../db/connection.js";
+import type { CustomAuthEnv } from "./auth.middleware.js";
 import { requireSyncAuth, runSync, SyncRequestSchema } from "./sync.service.js";
 
-export const syncRoutes = new Hono();
+export const syncRoutes = new Hono<CustomAuthEnv>();
 
 syncRoutes.use("/sync", requireSyncAuth);
 

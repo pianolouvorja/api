@@ -1189,7 +1189,8 @@ const uploadCustomFileRoute = createRoute({
   },
 });
 
-customRoutes.openapi(uploadCustomFileRoute, async (c) => {
+// biome-ignore lint/suspicious/noExplicitAny: contexto tipado difere do Env do app (optionalAuth injeta "user")
+customRoutes.openapi(uploadCustomFileRoute, async (c: any) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file");
@@ -1198,6 +1199,16 @@ customRoutes.openapi(uploadCustomFileRoute, async (c) => {
 
     if (!(file instanceof File)) {
       return c.json({ error: 'Campo "file" ausente ou inválido' }, 400);
+    }
+
+    // Quota por usuário (B7/B12): 413 quando estourar os 100 MB
+    const quotaUser = c.get("user" as never) as { id_user: number } | undefined;
+    if (quotaUser) {
+      const { quotaCheck } = await import("./quota.service.js");
+      const q = quotaCheck(quotaUser.id_user, file.size);
+      if (!q.ok) {
+        return c.json({ error: "quota_exceeded", message: q.message }, 413);
+      }
     }
 
     // Sanitiza nome: mantém basename, remove separadores e caracteres perigosos
