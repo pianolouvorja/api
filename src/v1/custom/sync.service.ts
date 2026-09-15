@@ -125,10 +125,19 @@ function nowMs(): number {
   return Date.now();
 }
 
-function ensureUuid(db: ReturnType<typeof getDb>, table: string, idCol: string, id: number, current: string | null): string {
+function _ensureUuid(
+  db: ReturnType<typeof getDb>,
+  table: string,
+  idCol: string,
+  id: number,
+  current: string | null,
+): string {
   if (current) return current;
   const u = legacyUuid();
-  db.prepare(`UPDATE ${table} SET client_uuid = ? WHERE ${idCol} = ?`).run(u, id);
+  db.prepare(`UPDATE ${table} SET client_uuid = ? WHERE ${idCol} = ?`).run(
+    u,
+    id,
+  );
   return u;
 }
 
@@ -205,7 +214,7 @@ function applyCollection(
   if (!existing) {
     // criação — mas se algum tombstone existia com esse uuid (purgado?) não há
     // como saber; assume novo. owner = quem sincroniza.
-    const t = incoming.deleted_at ?? incoming.updated_at;
+    const _t = incoming.deleted_at ?? incoming.updated_at;
     const r = db
       .prepare(
         `INSERT INTO custom_collections
@@ -260,7 +269,10 @@ function applyCollection(
       }
     }
   } else {
-    conflicts.push({ client_uuid: incoming.client_uuid, resolution: "server-wins" });
+    conflicts.push({
+      client_uuid: incoming.client_uuid,
+      resolution: "server-wins",
+    });
   }
 }
 
@@ -337,7 +349,10 @@ function applyMusic(
       replaceLyrics(db, existing.id_music, incoming.lyrics);
     }
   } else {
-    conflicts.push({ client_uuid: incoming.client_uuid, resolution: "server-wins" });
+    conflicts.push({
+      client_uuid: incoming.client_uuid,
+      resolution: "server-wins",
+    });
   }
 }
 
@@ -352,7 +367,16 @@ function replaceLyrics(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const l of lyrics) {
-    ins.run(idMusic, l.lyric, l.aux_lyric ?? null, l.time, l.instrumental_time, l.show_slide, l.order, nowMs());
+    ins.run(
+      idMusic,
+      l.lyric,
+      l.aux_lyric ?? null,
+      l.time,
+      l.instrumental_time,
+      l.show_slide,
+      l.order,
+      nowMs(),
+    );
   }
 }
 

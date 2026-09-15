@@ -27,9 +27,9 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
   it("colunas de sync existem nas 3 tabelas", () => {
     const db = getDb();
     const cols = (t: string) =>
-      (
-        db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]
-      ).map((c) => c.name);
+      (db.prepare(`PRAGMA table_info(${t})`).all() as { name: string }[]).map(
+        (c) => c.name,
+      );
     expect(cols("custom_collections")).toContain("client_uuid");
     expect(cols("custom_collections")).toContain("deleted_at");
     expect(cols("custom_collections")).toContain("updated_at_ms");
@@ -49,7 +49,9 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
       expect(String(e)).toContain("duplicate column name");
     }
     // tabela continua intacta e consultável
-    const n = db.prepare("SELECT count(*) as c FROM custom_collections").get() as {
+    const n = db
+      .prepare("SELECT count(*) as c FROM custom_collections")
+      .get() as {
       c: number;
     };
     expect(n.c).toBeGreaterThanOrEqual(0);
@@ -72,7 +74,9 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
        WHERE id_collection = ? AND client_uuid IS NULL`,
     ).run(row.id_collection);
     const back = db
-      .prepare("SELECT client_uuid, updated_at_ms FROM custom_collections WHERE id_collection = ?")
+      .prepare(
+        "SELECT client_uuid, updated_at_ms FROM custom_collections WHERE id_collection = ?",
+      )
       .get(row.id_collection) as any;
     expect(back.client_uuid).toBeTruthy();
     expect(back.updated_at_ms).toBe(1700000000000);
@@ -87,7 +91,9 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
     ).run(t1);
     const id = (
       db
-        .prepare("SELECT id_collection FROM custom_collections WHERE client_uuid='uuid-lww-a'")
+        .prepare(
+          "SELECT id_collection FROM custom_collections WHERE client_uuid='uuid-lww-a'",
+        )
         .get() as any
     ).id_collection;
     // server tem versão mais nova → client (t1) perde
@@ -106,10 +112,14 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
     db.prepare(
       "UPDATE custom_collections SET deleted_at = ?, updated_at_ms = ? WHERE id_collection = ?",
     ).run(del, del, id);
-    const tomb = db.prepare("SELECT * FROM custom_collections WHERE id_collection = ?").get(id) as any;
+    const tomb = db
+      .prepare("SELECT * FROM custom_collections WHERE id_collection = ?")
+      .get(id) as any;
     expect(tomb.deleted_at).toBe(del);
     const alive = db
-      .prepare("SELECT count(*) as c FROM custom_collections WHERE id_collection = ? AND deleted_at IS NULL")
+      .prepare(
+        "SELECT count(*) as c FROM custom_collections WHERE id_collection = ? AND deleted_at IS NULL",
+      )
       .get(id) as any;
     expect(alive.c).toBe(0);
   });
@@ -127,8 +137,12 @@ describe("P1 viabilidade: schema offline sync (migration 023)", () => {
         .run(),
     ).toThrow(/UNIQUE/);
     // NULL (legado) pode repetir à vontade
-    db.prepare("INSERT INTO custom_collections (name) VALUES ('Legacy A')").run();
-    db.prepare("INSERT INTO custom_collections (name) VALUES ('Legacy B')").run();
+    db.prepare(
+      "INSERT INTO custom_collections (name) VALUES ('Legacy A')",
+    ).run();
+    db.prepare(
+      "INSERT INTO custom_collections (name) VALUES ('Legacy B')",
+    ).run();
     expect(true).toBe(true);
   });
 });

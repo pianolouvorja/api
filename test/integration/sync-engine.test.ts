@@ -47,7 +47,15 @@ describe("sync engine (LWW batch)", () => {
               name: "Hino 100",
               lyric: "glória glória",
               updated_at: T0,
-              lyrics: [{ lyric: "glória glória", order: 0, time: "00:00", instrumental_time: "00:00", show_slide: 1 }],
+              lyrics: [
+                {
+                  lyric: "glória glória",
+                  order: 0,
+                  time: "00:00",
+                  instrumental_time: "00:00",
+                  show_slide: 1,
+                },
+              ],
             },
           ],
         },
@@ -101,7 +109,9 @@ describe("sync engine (LWW batch)", () => {
         },
       ],
     });
-    expect(r.conflicts.find((c) => c.client_uuid === "col-aaaa-0001")).toBeUndefined();
+    expect(
+      r.conflicts.find((c) => c.client_uuid === "col-aaaa-0001"),
+    ).toBeUndefined();
     const col = r.collections.find((c) => c.client_uuid === "col-aaaa-0001");
     expect(col!.name).toBe("Versão MAIS NOVA");
   });
@@ -111,7 +121,12 @@ describe("sync engine (LWW batch)", () => {
     // userA deleta (tombstone) — vence pois é mais novo
     let r = runSync(userA.id_user, {
       collections: [
-        { client_uuid: "col-aaaa-0001", name: "x", updated_at: T, deleted_at: T },
+        {
+          client_uuid: "col-aaaa-0001",
+          name: "x",
+          updated_at: T,
+          deleted_at: T,
+        },
       ],
     });
     expect(r.applied.updated).toBe(1);
@@ -131,7 +146,11 @@ describe("sync engine (LWW batch)", () => {
     // B tenta recriar com o mesmo client_uuid e timestamp novo
     const r = runSync(userB.id_user, {
       collections: [
-        { client_uuid: "col-aaaa-0001", name: "hack ressurreição", updated_at: T },
+        {
+          client_uuid: "col-aaaa-0001",
+          name: "hack ressurreição",
+          updated_at: T,
+        },
       ],
     });
     // a row tombstoned existe; criação vira UPDATE no existente, mas B não é dono
@@ -159,7 +178,7 @@ describe("sync engine (LWW batch)", () => {
       client_uuid: "col-priv-0001",
       resolution: "server-wins-forbidden",
     });
-    const col = r.collections.find((c) => c.client_uuid === "col-priv-0001");
+    const _col = r.collections.find((c) => c.client_uuid === "col-priv-0001");
     // B não vê a collection de A na resposta (lista é do próprio user ou públicas)
     const mineOrPublic = r.collections.filter(
       (c) => c.client_uuid === "col-priv-0001",
@@ -178,7 +197,11 @@ describe("sync engine (LWW batch)", () => {
           name: "Multi-device",
           updated_at: T0 + 1000,
           musics: [
-            { client_uuid: "mus-two-dev-01", name: "Hino X", updated_at: T0 + 1000 },
+            {
+              client_uuid: "mus-two-dev-01",
+              name: "Hino X",
+              updated_at: T0 + 1000,
+            },
           ],
         },
       ],
@@ -191,9 +214,9 @@ describe("sync engine (LWW batch)", () => {
     expect(col!.musics[0].name).toBe("Hino X");
     // rodar 2x dá o mesmo resultado (determinismo)
     const r3 = runSync(userA.id_user, { collections: [] });
-    expect(r3.collections.find((c) => c.client_uuid === "col-two-dev-01")?.name).toBe(
-      "Multi-device",
-    );
+    expect(
+      r3.collections.find((c) => c.client_uuid === "col-two-dev-01")?.name,
+    ).toBe("Multi-device");
   });
 
   it("música movida de coletânea via sync (id_collection atualiza)", () => {
@@ -211,7 +234,11 @@ describe("sync engine (LWW batch)", () => {
           name: "Destino",
           updated_at: T0 + 500,
           musics: [
-            { client_uuid: "mus-move-01", name: "Viajante", updated_at: T0 + 500 },
+            {
+              client_uuid: "mus-move-01",
+              name: "Viajante",
+              updated_at: T0 + 500,
+            },
           ],
         },
       ],

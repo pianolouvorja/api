@@ -32,7 +32,10 @@ export function usedBytes(userId: number): number {
   return r.total ?? 0;
 }
 
-export function quotaCheck(userId: number, incomingBytes: number): {
+export function quotaCheck(
+  userId: number,
+  incomingBytes: number,
+): {
   ok: boolean;
   used: number;
   quota: number;
@@ -66,10 +69,14 @@ export function purgeTombstones(days = 30): {
 
   // músicas tombstoned antigas: cascade cuida de custom_lyrics (FK ON DELETE CASCADE)
   const m = db
-    .prepare(`DELETE FROM custom_musics WHERE deleted_at IS NOT NULL AND deleted_at < ?`)
+    .prepare(
+      `DELETE FROM custom_musics WHERE deleted_at IS NOT NULL AND deleted_at < ?`,
+    )
     .run(cutoff);
   const c = db
-    .prepare(`DELETE FROM custom_collections WHERE deleted_at IS NOT NULL AND deleted_at < ?`)
+    .prepare(
+      `DELETE FROM custom_collections WHERE deleted_at IS NOT NULL AND deleted_at < ?`,
+    )
     .run(cutoff);
 
   return { collections: c.changes, musics: m.changes };

@@ -7,18 +7,21 @@ const tmpDir = mkdtempSync(join(tmpdir(), "plj-quota-"));
 process.env.DB_PATH = join(tmpDir, "quota.db");
 
 const { initDb, closeDb, getDb } = await import("../../src/db/connection.js");
-const {
-  purgeTombstones,
-  quotaCheck,
-  usedBytes,
-  getQuotaBytes,
-} = await import("../../src/v1/custom/quota.service.js");
+const { purgeTombstones, quotaCheck, usedBytes, getQuotaBytes } = await import(
+  "../../src/v1/custom/quota.service.js"
+);
 
 /** seed mínimo: user + coletânea + música com N arquivos somando bytes */
-function seedUserMusic(email: string, fileBytes: number[], opts?: { tombstoned?: boolean }) {
+function seedUserMusic(
+  email: string,
+  fileBytes: number[],
+  opts?: { tombstoned?: boolean },
+) {
   const db = getDb();
   const u = db
-    .prepare("INSERT INTO custom_users (email, password_hash, display_name) VALUES (?, 'x', 't')")
+    .prepare(
+      "INSERT INTO custom_users (email, password_hash, display_name) VALUES (?, 'x', 't')",
+    )
     .run(email);
   const uid = Number(u.lastInsertRowid);
   const c = db
@@ -28,7 +31,9 @@ function seedUserMusic(email: string, fileBytes: number[], opts?: { tombstoned?:
   const fileIds: number[] = [];
   for (const bytes of fileBytes) {
     const f = db
-      .prepare("INSERT INTO files (name, path, type, url, size) VALUES ('f', '/x', 'image', '/x', ?)")
+      .prepare(
+        "INSERT INTO files (name, path, type, url, size) VALUES ('f', '/x', 'image', '/x', ?)",
+      )
       .run(bytes);
     fileIds.push(Number(f.lastInsertRowid));
   }
@@ -88,8 +93,16 @@ describe("quota + purge (B5, B7, B12)", () => {
     expect(r.musics).toBeGreaterThanOrEqual(1);
 
     const db = getDb();
-    expect(db.prepare("SELECT count(*) c FROM custom_musics WHERE id_music = ?").get(old.mid)).toMatchObject({ c: 0 });
+    expect(
+      db
+        .prepare("SELECT count(*) c FROM custom_musics WHERE id_music = ?")
+        .get(old.mid),
+    ).toMatchObject({ c: 0 });
     // tombstone recente permanece (B5: purge só após 30 dias)
-    expect(db.prepare("SELECT count(*) c FROM custom_musics WHERE id_music = ?").get(fresh.mid)).toMatchObject({ c: 1 });
+    expect(
+      db
+        .prepare("SELECT count(*) c FROM custom_musics WHERE id_music = ?")
+        .get(fresh.mid),
+    ).toMatchObject({ c: 1 });
   });
 });
