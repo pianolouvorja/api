@@ -32,7 +32,13 @@
     "zod": "^4.5.4"
   },
   "lint-staged": {
-    "*.{ts,json}": [
+    "src/**/*.{ts,json}": [
+      "biome check --write"
+    ],
+    "test/**/*.{ts,json}": [
+      "biome check --write"
+    ],
+    "package.json": [
       "biome check --write"
     ]
   },
