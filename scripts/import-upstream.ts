@@ -621,8 +621,8 @@ async function importBible() {
   if (Array.isArray(versions)) {
     for (const v of versions) {
       db.prepare(
-        "INSERT OR IGNORE INTO bible_versions (id_version, name, language) VALUES (?, ?, ?)",
-      ).run(v.id_bible_version ?? v.id, v.name, "pt");
+        "INSERT OR IGNORE INTO bible_versions (id_version, name, language, abbreviation) VALUES (?, ?, ?, ?)",
+      ).run(v.id_bible_version ?? v.id, v.name, "pt", v.abbreviation ?? null);
     }
     console.log(`  ${versions.length} versoes`);
   }
