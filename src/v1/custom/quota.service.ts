@@ -29,7 +29,8 @@ export function usedBytes(userId: number): number {
        WHERE cm.owner_id = ? AND cm.deleted_at IS NULL`,
     )
     .get(userId) as { total: number };
-  return r.total ?? 0;
+  // COALESCE garante número; sem rows = 0
+  return r.total;
 }
 
 export function quotaCheck(

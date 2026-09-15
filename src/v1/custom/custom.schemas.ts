@@ -6,6 +6,8 @@ export const CustomCollectionSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   cover_url: z.string().nullable().optional(),
+  owner_id: z.number().nullable().optional(),
+  author_name: z.string().nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
   musics_count: z.number().optional(),
@@ -24,6 +26,7 @@ export const CustomCollectionsListResponseSchema = z.object({
 export const CreateCustomCollectionSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
+  author_name: z.string().max(80).nullable().optional(),
 });
 
 export const UpdateCustomCollectionSchema = z.object({
@@ -149,4 +152,31 @@ export const ImportSljaResponseSchema = z.object({
 export const ExportSljaRequestSchema = z.object({
   collection_id: z.number(),
   music_id: z.number().optional(),
+});
+export const RegisterSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+  displayName: z.string().min(1).max(80),
+});
+
+export const LoginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+export const AuthResponseSchema = z.object({
+  token: z.string().min(1),
+  user: z.object({
+    id_user: z.number(),
+    email: z.string().email(),
+    displayName: z.string(),
+  }),
+});
+
+export const MeResponseSchema = z.object({
+  user: z.object({
+    id_user: z.number(),
+    email: z.string().email(),
+    displayName: z.string(),
+  }),
 });

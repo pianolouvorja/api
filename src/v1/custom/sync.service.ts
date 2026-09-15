@@ -96,13 +96,6 @@ export type SyncResultCollection = {
   }>;
 };
 
-/** uuid v4 fake-gerado no servidor para backfill de legado (não client_uuid). */
-function legacyUuid(): string {
-  // biome-ignore lint/suspicious/noExplicitAny: crypto global ok em node
-  const g: any = globalThis;
-  return g.crypto.randomUUID();
-}
-
 export const requireSyncAuth: MiddlewareHandler<CustomAuthEnv> =
   createMiddleware<CustomAuthEnv>(async (c, next) => {
     const raw = c.req.header("authorization") ?? "";
@@ -124,22 +117,9 @@ export const requireSyncAuth: MiddlewareHandler<CustomAuthEnv> =
 function nowMs(): number {
   return Date.now();
 }
-
-function _ensureUuid(
-  db: ReturnType<typeof getDb>,
-  table: string,
-  idCol: string,
-  id: number,
-  current: string | null,
-): string {
-  if (current) return current;
-  const u = legacyUuid();
-  db.prepare(`UPDATE ${table} SET client_uuid = ? WHERE ${idCol} = ?`).run(
-    u,
-    id,
-  );
-  return u;
-}
+// NOTA: registros legados (pré-sync, sem client_uuid) recebem uuid no primeiro
+// PUSH do cliente que os editar (upsert por client_uuid). O servidor NÃO
+// backfila uuid automaticamente — evita escrita em massa no primeiro sync.
 
 function loadServerCollections(
   db: ReturnType<typeof getDb>,
@@ -263,10 +243,27 @@ function applyCollection(
       existing.id_collection,
     );
     applied.updated++;
-    if (!incoming.deleted_at) {
-      for (const m of incoming.musics ?? []) {
-        applyMusic(db, userId, existing.id_collection, m, applied, conflicts);
-      }
+    // Sempre propaga os tombstones das músicas (delete em cascata lógico):
+    // quando a coletânea é deletada, cada música vira tombstone também; quando
+    // viva, o LWW normal de cada música é aplicado.
+    for (const m of incoming.musics ?? []) {
+      const mIncoming = incoming.deleted_at
+        ? {
+            ...m,
+            deleted_at: m.deleted_at ?? incoming.deleted_at,
+            // ausência de updated_at próprio herda o ts do delete da coleção
+            updated_at:
+              m.updated_at === undefined ? incoming.deleted_at : m.updated_at,
+          }
+        : m;
+      applyMusic(
+        db,
+        userId,
+        existing.id_collection,
+        mIncoming,
+        applied,
+        conflicts,
+      );
     }
   } else {
     conflicts.push({
@@ -363,19 +360,18 @@ function replaceLyrics(
 ): void {
   db.prepare(`DELETE FROM custom_lyrics WHERE id_music = ?`).run(idMusic);
   const ins = db.prepare(
-    `INSERT INTO custom_lyrics (id_music, lyric, aux_lyric, time, instrumental_time, show_slide, "order", updated_at_ms)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO custom_lyrics (id_music, lyric, aux_lyric, time, instrumental_time, show_slide, "order", updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
   );
   for (const l of lyrics) {
     ins.run(
       idMusic,
       l.lyric,
       l.aux_lyric ?? null,
-      l.time,
-      l.instrumental_time,
-      l.show_slide,
-      l.order,
-      nowMs(),
+      l.time ?? "00:00",
+      l.instrumental_time ?? "00:00",
+      l.show_slide ?? 1,
+      l.order ?? 0,
     );
   }
 }
