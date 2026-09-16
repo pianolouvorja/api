@@ -194,8 +194,8 @@ describe("ranking.service (F1..F3)", () => {
   });
 
   it("badge concedida 1x (idempotente)", () => {
-      expect(grantBadge(db, userA, "first_public")).toBe(true);
-      expect(grantBadge(db, userA, "first_public")).toBe(false);
+      expect(grantBadge(db, userB, "first_public")).toBe(true);
+      expect(grantBadge(db, userB, "first_public")).toBe(false);
     });
 
     it("níveis: nomes neutros e thresholds 0/50/150/400/1000", () => {
