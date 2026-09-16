@@ -1,9 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { initDb, getDb, closeDb } from "../../src/db/connection.js";
+import { closeDb, getDb, initDb } from "../../src/db/connection.js";
 import {
   ANOMALY_MAX_PUBLISHES,
-  LEVELS,
   checkAnomalyAndFreeze,
   creditPoints,
   getLevel,
@@ -11,6 +10,7 @@ import {
   getUserPosition,
   grantBadge,
   isFrozen,
+  LEVELS,
   recordCollectionUse,
   unfreeze,
 } from "../../src/v1/custom/ranking.service.js";
@@ -98,9 +98,7 @@ describe("ranking.service (F1..F3)", () => {
     it("publish credita +10", () => {
       expect(creditPoints(db, userA, "publish", collectionA)).toBe(true);
       const last = db
-        .prepare(
-          `SELECT points FROM contrib_points ORDER BY id DESC LIMIT 1`,
-        )
+        .prepare(`SELECT points FROM contrib_points ORDER BY id DESC LIMIT 1`)
         .get();
       expect(last.points).toBe(10);
     });
@@ -116,9 +114,7 @@ describe("ranking.service (F1..F3)", () => {
     });
 
     it("rajada de publicações congela (anti-spam)", () => {
-      const spamer = Number(
-        ins().lastInsertRowid,
-      );
+      const spamer = Number(ins().lastInsertRowid);
       function ins(): any {
         return db
           .prepare(

@@ -1,9 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  setupSeededDb,
-  type SeededDb,
-} from "../helpers/seeded-db.js";
+import { type SeededDb, setupSeededDb } from "../helpers/seeded-db.js";
 
 /**
  * F1/F2 — fluxo HTTP de usos e ranking (integração).

@@ -97,7 +97,7 @@ export function checkAnomalyAndFreeze(db: DbLike, userId: number): boolean {
        WHERE user_id = ? AND reason = 'publish'
          AND created_at > datetime('now', '-' || ? || ' minutes')`,
     )
-    .get(userId, ANOMALY_WINDOW_MINUTES);
+    .get(userId, ANOMALY_WINDOW_MINUTES) as { n: number };
   if (recent.n > ANOMALY_MAX_PUBLISHES) {
     db.prepare(
       `INSERT OR IGNORE INTO point_freeze (user_id, reason) VALUES (?, ?)`,
