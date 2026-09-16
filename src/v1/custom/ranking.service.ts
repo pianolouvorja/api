@@ -1,3 +1,5 @@
+import type BetterSqlite3 from "better-sqlite3";
+
 /**
  * Ranking e Gamificação (F1..F3) — SPEC validada 16/09.
  *
@@ -28,15 +30,8 @@ export type PointReason = keyof typeof POINTS | "weekly_task" | "badge";
 export const ANOMALY_MAX_PUBLISHES = 5;
 export const ANOMALY_WINDOW_MINUTES = 30;
 
-type SqliteStatement = {
-  run: (...params: unknown[]) => { changes: number; lastInsertRowid: number | bigint };
-  get: (...params: unknown[]) => unknown;
-  all: (...params: unknown[]) => unknown[];
-};
-
-export type DbLike = {
-  prepare: (sql: string) => SqliteStatement;
-};
+/** Aceita a conexão better-sqlite3 real (ou qualquer subtipo estrutural). */
+export type DbLike = BetterSqlite3.Database;
 
 /**
  * Registra uso de coletânea (F1). 1x por user×collection (PK).
@@ -150,7 +145,12 @@ export function getRanking(
        LIMIT ?`,
     )
     .all(limit);
-  type RankRow = { user_id: number; display_name: string; total: number; first_point: string };
+  type RankRow = {
+    user_id: number;
+    display_name: string;
+    total: number;
+    first_point: string;
+  };
   return (rows as RankRow[]).map((r, i) => ({
     position: i + 1,
     user_id: r.user_id,
