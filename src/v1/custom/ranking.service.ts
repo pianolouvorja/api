@@ -28,8 +28,14 @@ export type PointReason = keyof typeof POINTS | "weekly_task" | "badge";
 export const ANOMALY_MAX_PUBLISHES = 5;
 export const ANOMALY_WINDOW_MINUTES = 30;
 
+type SqliteStatement = {
+  run: (...params: unknown[]) => { changes: number; lastInsertRowid: number | bigint };
+  get: (...params: unknown[]) => unknown;
+  all: (...params: unknown[]) => unknown[];
+};
+
 export type DbLike = {
-  prepare: (sql: string) => any;
+  prepare: (sql: string) => SqliteStatement;
 };
 
 /**
@@ -128,9 +134,7 @@ export function getRanking(
   total: number;
 }> {
   const since =
-    window === "week"
-      ? `AND p.created_at > datetime('now', '-7 days')`
-      : "";
+    window === "week" ? `AND p.created_at > datetime('now', '-7 days')` : "";
   const rows = db
     .prepare(
       `SELECT p.user_id,
@@ -146,7 +150,8 @@ export function getRanking(
        LIMIT ?`,
     )
     .all(limit);
-  return rows.map((r: any, i: number) => ({
+  type RankRow = { user_id: number; display_name: string; total: number; first_point: string };
+  return (rows as RankRow[]).map((r, i) => ({
     position: i + 1,
     user_id: r.user_id,
     display_name: r.display_name,
@@ -166,15 +171,9 @@ export function getUserPosition(
 }
 
 /** Concede badge (idempotente). Retorna true se era nova. */
-export function grantBadge(
-  db: DbLike,
-  userId: number,
-  badge: string,
-): boolean {
+export function grantBadge(db: DbLike, userId: number, badge: string): boolean {
   const r = db
-    .prepare(
-      `INSERT OR IGNORE INTO user_badges (user_id, badge) VALUES (?, ?)`,
-    )
+    .prepare(`INSERT OR IGNORE INTO user_badges (user_id, badge) VALUES (?, ?)`)
     .run(userId, badge);
   return r.changes > 0;
 }
@@ -188,7 +187,12 @@ export const LEVELS = [
   { min: 1000, name: "Lenda" },
 ] as const;
 
-export function getLevel(totalPoints: number): { level: number; name: string; min: number; next: number | null } {
+export function getLevel(totalPoints: number): {
+  level: number;
+  name: string;
+  min: number;
+  next: number | null;
+} {
   let idx = 0;
   for (let i = 0; i < LEVELS.length; i++) {
     if (totalPoints >= LEVELS[i].min) idx = i;

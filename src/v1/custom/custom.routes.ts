@@ -3,13 +3,6 @@ import type { Context } from "hono";
 import { getDb } from "../../db/connection.js";
 import { optionalAuth, requireAuth } from "./auth.middleware.js";
 import {
-  checkAnomalyAndFreeze,
-  creditPoints,
-  getRanking,
-  getUserPosition,
-  recordCollectionUse,
-} from "./ranking.service.js";
-import {
   AuthResponseSchema,
   CreateCustomCollectionSchema,
   CreateCustomLyricSchema,
@@ -30,6 +23,13 @@ import {
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
 } from "./custom.schemas.js";
+import {
+  checkAnomalyAndFreeze,
+  creditPoints,
+  getRanking,
+  getUserPosition,
+  recordCollectionUse,
+} from "./ranking.service.js";
 
 const customRoutes = new OpenAPIHono();
 
@@ -1809,11 +1809,15 @@ const recordUseRoute = createRoute({
       description: "Uso registrado (ou já existente)",
     },
     401: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Não autenticado",
     },
     404: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Coletânea não encontrada",
     },
   },
@@ -1898,7 +1902,9 @@ const myPositionRoute = createRoute({
       description: "Posição no ranking (null se não pontuou)",
     },
     401: {
-      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
       description: "Não autenticado",
     },
   },
@@ -1909,7 +1915,10 @@ customRoutes.openapi(myPositionRoute, (c) => {
   const user = c.get("user") as { id_user: number };
   const window = c.req.valid("query").window;
   const pos = getUserPosition(db, user.id_user, window);
-  return c.json({ position: pos?.position ?? null, total: pos?.total ?? null }, 200);
+  return c.json(
+    { position: pos?.position ?? null, total: pos?.total ?? null },
+    200,
+  );
 });
 
 export { customRoutes };
