@@ -1,3 +1,4 @@
+import type { DbLike } from "./ranking.service.js";
 /**
  * F4 — Tarefas semanais (SPEC RF-5).
  *
@@ -49,13 +50,7 @@ export function weeklyTasksFor(weekKey: string): WeeklyTaskDef[] {
   return [0, 1, 2].map((i) => WEEKLY_TASKS[(offset + i) % WEEKLY_TASKS.length]);
 }
 
-type DbLike = {
-  prepare: (sql: string) => {
-    run: (...params: unknown[]) => { changes: number };
-    get: (...params: unknown[]) => any;
-    all: (...params: unknown[]) => any[];
-  };
-};
+
 
 /** Marca tarefa como concluída pelo usuário na semana (idempotente). */
 export function completeWeeklyTask(
