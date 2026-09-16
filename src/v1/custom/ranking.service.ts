@@ -178,7 +178,6 @@ export function grantBadge(db: DbLike, userId: number, badge: string): boolean {
   return r.changes > 0;
 }
 
-
 /**
  * F3: avalia e concede badges automáticas após eventos de pontuação.
  * Idempotente (PK user+badge). Badge "coletânea mais usada da semana" fica
@@ -218,7 +217,9 @@ export function evaluateBadges(db: DbLike, userId: number): string[] {
 export function listUserBadges(db: DbLike, userId: number): string[] {
   return (
     db
-      .prepare(`SELECT badge FROM user_badges WHERE user_id = ? ORDER BY granted_at`)
+      .prepare(
+        `SELECT badge FROM user_badges WHERE user_id = ? ORDER BY granted_at`,
+      )
       .all(userId) as Array<{ badge: string }>
   ).map((r) => r.badge);
 }

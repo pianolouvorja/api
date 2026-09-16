@@ -31,6 +31,11 @@ import {
   getUserPosition,
   recordCollectionUse,
 } from "./ranking.service.js";
+import {
+  completeWeeklyTask,
+  getWeeklyTasksForUser,
+  isoWeekKey,
+} from "./weekly-tasks.service.js";
 
 const customRoutes = new OpenAPIHono();
 
@@ -75,6 +80,10 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
       FROM custom_collections cc
       LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
       WHERE ${user ? "(cc.visibility = 'public' OR cc.owner_id = ?)" : "cc.visibility = 'public'"}
+        AND NOT EXISTS (
+          SELECT 1 FROM collection_reports r
+          WHERE r.collection_id = cc.id_collection AND r.status = 'open'
+        )
       GROUP BY cc.id_collection ORDER BY cc.updated_at DESC
     `;
     if (user) {
@@ -1840,7 +1849,9 @@ customRoutes.openapi(recordUseRoute, (c) => {
   const firstUse = recordCollectionUse(db, user.id_user, collectionId);
   if (firstUse) {
     const owner = db
-      .prepare(`SELECT owner_id FROM custom_collections WHERE id_collection = ?`)
+      .prepare(
+        `SELECT owner_id FROM custom_collections WHERE id_collection = ?`,
+      )
       .get(collectionId) as { owner_id: number | null } | undefined;
     if (owner?.owner_id != null) evaluateBadges(db, owner.owner_id);
   }
@@ -1927,6 +1938,172 @@ customRoutes.openapi(myPositionRoute, (c) => {
     { position: pos?.position ?? null, total: pos?.total ?? null },
     200,
   );
+});
+
+// ============================================
+// Tarefas semanais (F4)
+// ============================================
+
+const weeklyTasksRoute = createRoute({
+  method: "get",
+  path: "/weekly-tasks",
+  tags: ["custom"],
+  description:
+    "Tarefas semanais do usuário autenticado (3 rotativas, reset domingo 00:00 UTC-3)",
+  middleware: [requireAuth] as const,
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            week_key: z.string(),
+            data: z.array(
+              z.object({
+                id: z.string(),
+                description: z.string(),
+                done: z.boolean(),
+                bonus: z.number(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Tarefas da semana",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(weeklyTasksRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const weekKey = isoWeekKey();
+  const tasks = getWeeklyTasksForUser(db, user.id_user, weekKey).map((t) => ({
+    ...t,
+    bonus: 15,
+  }));
+  return c.json({ week_key: weekKey, data: tasks }, 200);
+});
+
+const completeTaskRoute = createRoute({
+  method: "post",
+  path: "/weekly-tasks/{taskId}/complete",
+  tags: ["custom"],
+  description:
+    "Marca tarefa semanal como concluída (idempotente; +15 na 1a vez da semana)",
+  middleware: [requireAuth] as const,
+  request: {
+    params: z.object({ taskId: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ ok: z.boolean(), credited: z.boolean() }),
+        },
+      },
+      description: "Tarefa marcada",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    404: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Tarefa não existe nesta semana",
+    },
+  },
+});
+
+customRoutes.openapi(completeTaskRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const weekKey = isoWeekKey();
+  const taskId = c.req.valid("param").taskId;
+
+  const task = getWeeklyTasksForUser(db, user.id_user, weekKey).find(
+    (t) => t.id === taskId,
+  );
+  if (!task) return c.json({ error: "Tarefa não existe nesta semana" }, 404);
+
+  // Validação mínima do servidor: tarefa done = marcada pelo cliente após
+  // cumprir; o servidor garante idempotência e bônus 1x. Validações fortes
+  // por tarefa (contagens) entram no F5+ (anti-fraude).
+  const credited = completeWeeklyTask(db, user.id_user, task, weekKey);
+  if (credited) {
+    creditPoints(db, user.id_user, "weekly_task");
+  }
+  return c.json({ ok: true, credited }, 200);
+});
+
+// ============================================
+// Moderação (F5) — report esconde até revisão
+// ============================================
+
+const reportCollectionRoute = createRoute({
+  method: "post",
+  path: "/collections/{id}/report",
+  tags: ["custom"],
+  description:
+    "Reporta coletânea (esconde do catálogo público até revisão da curadoria)",
+  middleware: [requireAuth] as const,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ reason: z.string().min(3).max(500) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ ok: z.boolean() }) },
+      },
+      description: "Report registrado",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    404: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Coletânea não encontrada",
+    },
+  },
+});
+
+customRoutes.openapi(reportCollectionRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const collectionId = Number(c.req.valid("param").id);
+  const { reason } = c.req.valid("json");
+
+  const exists = db
+    .prepare(`SELECT 1 FROM custom_collections WHERE id_collection = ?`)
+    .get(collectionId);
+  if (!exists) return c.json({ error: "Coletânea não encontrada" }, 404);
+
+  db.prepare(
+    `INSERT OR IGNORE INTO collection_reports (collection_id, reporter_id, reason) VALUES (?, ?, ?)`,
+  ).run(collectionId, user.id_user, reason);
+
+  return c.json({ ok: true }, 200);
 });
 
 export { customRoutes };

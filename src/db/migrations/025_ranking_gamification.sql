@@ -36,3 +36,24 @@ CREATE TABLE IF NOT EXISTS user_badges (
   granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (user_id, badge)
 );
+
+-- F4: tarefas semanais — bônus 1x por usuário×tarefa×semana (reset semanal).
+CREATE TABLE IF NOT EXISTS weekly_task_completions (
+  user_id INTEGER NOT NULL REFERENCES custom_users(id_user),
+  week_key TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  bonus INTEGER NOT NULL,
+  completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, week_key, task_id)
+);
+
+-- F5: moderação — report de coletânea esconde até revisão (SPEC RF-6).
+CREATE TABLE IF NOT EXISTS collection_reports (
+  collection_id INTEGER NOT NULL REFERENCES custom_collections(id_collection),
+  reporter_id INTEGER NOT NULL REFERENCES custom_users(id_user),
+  reason TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','kept','removed')),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (collection_id, reporter_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON collection_reports(status);
