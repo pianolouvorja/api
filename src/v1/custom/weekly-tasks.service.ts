@@ -50,8 +50,6 @@ export function weeklyTasksFor(weekKey: string): WeeklyTaskDef[] {
   return [0, 1, 2].map((i) => WEEKLY_TASKS[(offset + i) % WEEKLY_TASKS.length]);
 }
 
-
-
 /** Marca tarefa como concluída pelo usuário na semana (idempotente). */
 export function completeWeeklyTask(
   db: DbLike,

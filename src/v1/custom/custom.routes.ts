@@ -24,6 +24,11 @@ import {
   UpdateCustomMusicSchema,
 } from "./custom.schemas.js";
 import {
+  listUnreadNotifications,
+  markAllRead,
+  promoteMusicToF,
+} from "./promotion.service.js";
+import {
   checkAnomalyAndFreeze,
   creditPoints,
   evaluateBadges,
@@ -93,14 +98,21 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
 
     const collections = db.prepare(query).all(...params) as any[];
 
+    // Paginação (query da Comunidade): page/per_page via query string.
+    const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+    const perPageRaw = Number(c.req.query("per_page") ?? 24) || 24;
+    const perPage = Math.min(100, Math.max(1, perPageRaw));
+    const start = (page - 1) * perPage;
+    const pageItems = collections.slice(start, start + perPage);
+
     return c.json(
       {
-        data: collections,
+        data: pageItems,
         meta: {
           total: collections.length,
-          per_page: collections.length,
-          current_page: 1,
-          last_page: 1,
+          page,
+          per_page: perPage,
+          last_page: Math.max(1, Math.ceil(collections.length / perPage)),
         },
       },
       200,
@@ -2103,6 +2115,164 @@ customRoutes.openapi(reportCollectionRoute, (c) => {
     `INSERT OR IGNORE INTO collection_reports (collection_id, reporter_id, reason) VALUES (?, ?, ?)`,
   ).run(collectionId, user.id_user, reason);
 
+  return c.json({ ok: true }, 200);
+});
+
+// ============================================
+// F6: promoção ao oficial + notificações
+// ============================================
+
+const promoteRoute = createRoute({
+  method: "post",
+  path: "/admin/promote-music",
+  tags: ["custom"],
+  description:
+    "Promove faixa custom ao acervo oficial (curador; +50 pts, badge Autor Oficial, crédito permanente)",
+  middleware: [requireAuth] as const,
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            custom_music_id: z.number(),
+            official_music_id: z.number(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            awarded_to: z.number().nullable().optional(),
+            points: z.number().optional(),
+          }),
+        },
+      },
+      description: "Promovida",
+    },
+    400: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Erro de validação",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    403: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Sem permissão de curador",
+    },
+  },
+});
+
+customRoutes.openapi(promoteRoute, (c) => {
+  const user = c.get("user") as { id_user: number };
+
+  // Curadores autorizados via env (ids separados por vírgula). Sem env,
+  // nenhum usuário tem poder de promoção (fail-closed).
+  const curators = (process.env.CURATOR_USER_IDS ?? "")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!curators.includes(user.id_user)) {
+    return c.json({ error: "Sem permissão de curador" }, 403);
+  }
+
+  const db = getDb();
+  const { custom_music_id, official_music_id } = c.req.valid("json");
+  const result = promoteMusicToF(
+    db,
+    custom_music_id,
+    official_music_id,
+    user.id_user,
+    (to, subject, body) => {
+      // Injeção do mail real fica no compose da rota (mail.service já existe).
+      console.log(`[f6-mail] to=${to} subject=${subject}`);
+    },
+  );
+  if (!result.ok) return c.json({ error: result.error ?? "Erro" }, 400);
+  return c.json(
+    { ok: true, awarded_to: result.awardedTo ?? null, points: result.points },
+    200,
+  );
+});
+
+const notificationsRoute = createRoute({
+  method: "get",
+  path: "/notifications",
+  tags: ["custom"],
+  description: "Notificações não lidas do usuário autenticado",
+  middleware: [requireAuth] as const,
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(
+              z.object({
+                id: z.number(),
+                type: z.string(),
+                title: z.string(),
+                body: z.string(),
+                created_at: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Notificações não lidas",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(notificationsRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  return c.json({ data: listUnreadNotifications(db, user.id_user) }, 200);
+});
+
+const markReadRoute = createRoute({
+  method: "post",
+  path: "/notifications/read-all",
+  tags: ["custom"],
+  description: "Marca todas as notificações do usuário como lidas",
+  middleware: [requireAuth] as const,
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ ok: z.boolean() }) },
+      },
+      description: "Marcadas",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(markReadRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  markAllRead(db, user.id_user);
   return c.json({ ok: true }, 200);
 });
 

@@ -73,9 +73,12 @@ export function creditPoints(
   userId: number,
   reason: PointReason,
   refId?: number,
+  multiplier = 1,
+  pointsOverride?: number,
 ): boolean {
   if (isFrozen(db, userId)) return false;
-  const points = reason in POINTS ? POINTS[reason as keyof typeof POINTS] : 0;
+  const base = reason in POINTS ? POINTS[reason as keyof typeof POINTS] : 0;
+  const points = pointsOverride ?? Math.ceil(base * multiplier);
   db.prepare(
     `INSERT INTO contrib_points (user_id, points, reason, ref_id) VALUES (?, ?, ?, ?)`,
   ).run(userId, points, reason, refId ?? null);
