@@ -3,6 +3,13 @@ import type { Context } from "hono";
 import { getDb } from "../../db/connection.js";
 import { optionalAuth, requireAuth } from "./auth.middleware.js";
 import {
+  checkAnomalyAndFreeze,
+  creditPoints,
+  getRanking,
+  getUserPosition,
+  recordCollectionUse,
+} from "./ranking.service.js";
+import {
   AuthResponseSchema,
   CreateCustomCollectionSchema,
   CreateCustomLyricSchema,
@@ -156,6 +163,12 @@ customRoutes.openapi(createCollectionRoute, async (c) => {
     const collection = db
       .prepare(`SELECT * FROM custom_collections WHERE id_collection = ?`)
       .get(result.lastInsertRowid) as any;
+
+    // F2: publicar coletânea pública credita +10 (SPEC §2). Privada não pontua.
+    if ((body.visibility ?? "public") === "public") {
+      creditPoints(db, user.id_user, "publish", Number(result.lastInsertRowid));
+      checkAnomalyAndFreeze(db, user.id_user);
+    }
 
     return c.json({ ...collection, musics_count: 0 }, 201);
   } catch (error) {
@@ -1770,6 +1783,133 @@ customRoutes.openapi(resetPasswordRoute, (c) => {
   } catch {
     return c.json({ error: "Erro interno" }, 500);
   }
+});
+
+// ============================================
+// Ranking & Gamificação (F1..F2) — SPEC 16/09
+// ============================================
+
+const recordUseRoute = createRoute({
+  method: "post",
+  path: "/collections/{id}/use",
+  tags: ["custom"],
+  description:
+    "Registra uso de coletânea pública (1x por usuário×coletânea; credita +5 ao dono)",
+  middleware: [requireAuth] as const,
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ ok: z.boolean(), first_use: z.boolean() }),
+        },
+      },
+      description: "Uso registrado (ou já existente)",
+    },
+    401: {
+      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      description: "Não autenticado",
+    },
+    404: {
+      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      description: "Coletânea não encontrada",
+    },
+  },
+});
+
+customRoutes.openapi(recordUseRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const collectionId = Number(c.req.valid("param").id);
+
+  const exists = db
+    .prepare(
+      `SELECT 1 FROM custom_collections WHERE id_collection = ? AND visibility = 'public'`,
+    )
+    .get(collectionId);
+  if (!exists) return c.json({ error: "Coletânea não encontrada" }, 404);
+
+  const firstUse = recordCollectionUse(db, user.id_user, collectionId);
+  return c.json({ ok: true, first_use: firstUse }, 200);
+});
+
+const rankingRoute = createRoute({
+  method: "get",
+  path: "/ranking",
+  tags: ["custom"],
+  description:
+    "Ranking global de contribuidores (janela week|all; desempate por ponto mais antigo)",
+  request: {
+    query: z.object({
+      window: z.enum(["week", "all"]).optional().default("all"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(
+              z.object({
+                position: z.number(),
+                user_id: z.number(),
+                display_name: z.string().nullable(),
+                total: z.number(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Ranking global",
+    },
+  },
+});
+
+customRoutes.openapi(rankingRoute, (c) => {
+  const db = getDb();
+  const window = c.req.valid("query").window;
+  const data = getRanking(db, window);
+  return c.json({ data }, 200);
+});
+
+const myPositionRoute = createRoute({
+  method: "get",
+  path: "/ranking/me",
+  tags: ["custom"],
+  description: "Posição do usuário autenticado no ranking (week|all)",
+  middleware: [requireAuth] as const,
+  request: {
+    query: z.object({
+      window: z.enum(["week", "all"]).optional().default("all"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            position: z.number().nullable(),
+            total: z.number().nullable(),
+          }),
+        },
+      },
+      description: "Posição no ranking (null se não pontuou)",
+    },
+    401: {
+      content: { "application/json": { schema: z.object({ error: z.string() }) } },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(myPositionRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const window = c.req.valid("query").window;
+  const pos = getUserPosition(db, user.id_user, window);
+  return c.json({ position: pos?.position ?? null, total: pos?.total ?? null }, 200);
 });
 
 export { customRoutes };
