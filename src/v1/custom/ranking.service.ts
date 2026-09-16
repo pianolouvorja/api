@@ -178,6 +178,51 @@ export function grantBadge(db: DbLike, userId: number, badge: string): boolean {
   return r.changes > 0;
 }
 
+
+/**
+ * F3: avalia e concede badges automáticas após eventos de pontuação.
+ * Idempotente (PK user+badge). Badge "coletânea mais usada da semana" fica
+ * pro job semanal (fora do escopo das rotas transacionais).
+ */
+export function evaluateBadges(db: DbLike, userId: number): string[] {
+  const granted: string[] = [];
+
+  const publishes = db
+    .prepare(
+      `SELECT COUNT(DISTINCT ref_id) AS n FROM contrib_points WHERE user_id = ? AND reason = 'publish'`,
+    )
+    .get(userId) as { n: number };
+
+  if (publishes.n >= 1 && grantBadge(db, userId, "first_public")) {
+    granted.push("first_public");
+  }
+  if (publishes.n >= 10 && grantBadge(db, userId, "ten_publics")) {
+    granted.push("ten_publics");
+  }
+
+  const uses = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM collection_uses cu
+       JOIN custom_collections cc ON cc.id_collection = cu.collection_id
+       WHERE cc.owner_id = ?`,
+    )
+    .get(userId) as { n: number };
+  if (uses.n >= 100 && grantBadge(db, userId, "hundred_uses")) {
+    granted.push("hundred_uses");
+  }
+
+  return granted;
+}
+
+/** Lista badges do usuário (F3: exibição no perfil/ranking). */
+export function listUserBadges(db: DbLike, userId: number): string[] {
+  return (
+    db
+      .prepare(`SELECT badge FROM user_badges WHERE user_id = ? ORDER BY granted_at`)
+      .all(userId) as Array<{ badge: string }>
+  ).map((r) => r.badge);
+}
+
 /** Níveis (decisão #2: nomes NEUTROS). 0/50/150/400/1000. */
 export const LEVELS = [
   { min: 0, name: "Iniciante" },

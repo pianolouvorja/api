@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, getDb, initDb } from "../../src/db/connection.js";
 import {
   ANOMALY_MAX_PUBLISHES,
+  evaluateBadges,
   checkAnomalyAndFreeze,
   creditPoints,
   getLevel,
@@ -186,7 +187,13 @@ describe("ranking.service (F1..F3)", () => {
   });
 
   describe("F3 — badges e níveis", () => {
-    it("badge concedida 1x (idempotente)", () => {
+    it("evaluateBadges: 1a publica concede first_public (idempotente)", () => {
+    const granted = evaluateBadges(db, userA);
+    expect(granted).toContain("first_public");
+    expect(evaluateBadges(db, userA)).not.toContain("first_public");
+  });
+
+  it("badge concedida 1x (idempotente)", () => {
       expect(grantBadge(db, userA, "first_public")).toBe(true);
       expect(grantBadge(db, userA, "first_public")).toBe(false);
     });

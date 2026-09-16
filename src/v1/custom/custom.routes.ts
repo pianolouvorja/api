@@ -26,6 +26,7 @@ import {
 import {
   checkAnomalyAndFreeze,
   creditPoints,
+  evaluateBadges,
   getRanking,
   getUserPosition,
   recordCollectionUse,
@@ -168,6 +169,7 @@ customRoutes.openapi(createCollectionRoute, async (c) => {
     if ((body.visibility ?? "public") === "public") {
       creditPoints(db, user.id_user, "publish", Number(result.lastInsertRowid));
       checkAnomalyAndFreeze(db, user.id_user);
+      evaluateBadges(db, user.id_user);
     }
 
     return c.json({ ...collection, musics_count: 0 }, 201);
@@ -1836,6 +1838,12 @@ customRoutes.openapi(recordUseRoute, (c) => {
   if (!exists) return c.json({ error: "Coletânea não encontrada" }, 404);
 
   const firstUse = recordCollectionUse(db, user.id_user, collectionId);
+  if (firstUse) {
+    const owner = db
+      .prepare(`SELECT owner_id FROM custom_collections WHERE id_collection = ?`)
+      .get(collectionId) as { owner_id: number | null } | undefined;
+    if (owner?.owner_id != null) evaluateBadges(db, owner.owner_id);
+  }
   return c.json({ ok: true, first_use: firstUse }, 200);
 });
 
