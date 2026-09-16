@@ -24,6 +24,7 @@ import {
   UpdateCustomMusicSchema,
 } from "./custom.schemas.js";
 import {
+  getActiveSeasonalMultiplier,
   listUnreadNotifications,
   markAllRead,
   promoteMusicToF,
@@ -2274,6 +2275,54 @@ customRoutes.openapi(markReadRoute, (c) => {
   const user = c.get("user") as { id_user: number };
   markAllRead(db, user.id_user);
   return c.json({ ok: true }, 200);
+});
+
+// ============================================
+// F6: evento sazonal ativo (banner público)
+// ============================================
+
+const seasonalEventRoute = createRoute({
+  method: "get",
+  path: "/seasonal-event",
+  tags: ["custom"],
+  description:
+    "Evento sazonal ativo (multiplicador de pontos) — público, para banner na Comunidade",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            active: z.boolean(),
+            name: z.string().optional(),
+            description: z.string().optional(),
+            multiplier: z.number().optional(),
+          }),
+        },
+      },
+      description: "Evento ativo ou active:false",
+    },
+  },
+});
+
+customRoutes.openapi(seasonalEventRoute, (c) => {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT name, description, multiplier FROM seasonal_events
+       WHERE active = 1 AND datetime('now') BETWEEN starts_at AND ends_at
+       ORDER BY multiplier DESC LIMIT 1`,
+    )
+    .get() as { name: string; description: string | null; multiplier: number } | undefined;
+  if (!row) return c.json({ active: false }, 200);
+  return c.json(
+    {
+      active: true,
+      name: row.name,
+      description: row.description ?? undefined,
+      multiplier: row.multiplier,
+    },
+    200,
+  );
 });
 
 export { customRoutes };
