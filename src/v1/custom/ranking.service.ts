@@ -52,7 +52,7 @@ export function recordCollectionUse(
     .prepare(
       `SELECT owner_id FROM custom_collections WHERE id_collection = ? AND visibility = 'public'`,
     )
-    .get(collectionId);
+    .get(collectionId) as { owner_id: number | null } | undefined;
   if (!owner || owner.owner_id == null || owner.owner_id === userId) {
     // Não existe, é privada, órfã (oficial) ou o usuário usou a própria.
     return false;
