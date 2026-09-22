@@ -21,6 +21,17 @@ const port = Number(process.env.PORT ?? 3100);
 
 initDb();
 
+// Purge de tombstones >30d no boot (B5) — falha aqui não derruba o servidor
+try {
+  const { purgeTombstones } = await import("./v1/custom/quota.service.js");
+  const purged = purgeTombstones(30);
+  if (purged.collections || purged.musics) {
+    console.log(`[purge] tombstones removidos: ${JSON.stringify(purged)}`);
+  }
+} catch (e) {
+  console.error("[purge] falhou (não-fatal):", e);
+}
+
 const server = serve(
   { fetch: app.fetch, port, hostname: "0.0.0.0" },
   (info) => {
