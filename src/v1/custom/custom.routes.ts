@@ -13,10 +13,12 @@ import {
   CustomLyricsListResponseSchema,
   CustomMusicSchema,
   CustomMusicsListResponseSchema,
+  ForgotPasswordSchema,
   LoginSchema,
   MeResponseSchema,
   // Auth
   RegisterSchema,
+  ResetPasswordSchema,
   UpdateCustomCollectionSchema,
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
@@ -60,16 +62,21 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
     const db = getDb();
     const user = c.get("user") as { id_user: number } | undefined;
 
-    let query = `
+    // api#82: privada só o dono vê. Deslogado vê apenas públicas.
+    // Ordem dos placeholders: 1º o do is_owner (SELECT), 2º o do WHERE.
+    const params: any[] = [];
+    const query = `
       SELECT cc.*, COUNT(cm.id_music) as musics_count,
-             ${user ? "(cc.owner_id = ?)" : "0"} as is_owner
+             ${user ? "?" : "0"} as is_owner
       FROM custom_collections cc
       LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
+      WHERE ${user ? "(cc.visibility = 'public' OR cc.owner_id = ?)" : "cc.visibility = 'public'"}
+      GROUP BY cc.id_collection ORDER BY cc.updated_at DESC
     `;
-    const params: any[] = [];
-    if (user) params.push(user.id_user);
-
-    query += ` GROUP BY cc.id_collection ORDER BY cc.updated_at DESC`;
+    if (user) {
+      params.push(user.id_user); // is_owner
+      params.push(user.id_user); // filtro de visibilidade
+    }
 
     const collections = db.prepare(query).all(...params) as any[];
 
@@ -113,6 +120,12 @@ const createCollectionRoute = createRoute({
       },
       description: "Dados inválidos",
     },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado (api#82: escrita exige identidade)",
+    },
     500: {
       content: {
         "application/json": { schema: z.object({ error: z.string() }) },
@@ -122,21 +135,26 @@ const createCollectionRoute = createRoute({
   },
 });
 
-customRoutes.openapi(createCollectionRoute, (c) => {
+customRoutes.openapi(createCollectionRoute, async (c) => {
   try {
     const body = c.req.valid("json");
     const db = getDb();
     const user = c.get("user") as { id_user: number } | undefined;
 
+    // api#82 hardening: escrita na API exige identidade (sem auth cria
+    // local no cliente — a API nunca recebe anônimo).
+    if (!user) return c.json({ error: "Não autenticado" }, 401);
+
     const result = db
       .prepare(
-        `INSERT INTO custom_collections (name, description, owner_id, author_name) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO custom_collections (name, description, owner_id, author_name, visibility) VALUES (?, ?, ?, ?, ?)`,
       )
       .run(
         body.name,
         body.description ?? null,
-        user?.id_user ?? null,
+        user.id_user,
         body.author_name ?? null,
+        body.visibility ?? "public",
       );
 
     const collection = db
@@ -155,6 +173,7 @@ const getCollectionRoute = createRoute({
   path: "/collections/{id}",
   tags: ["custom"],
   description: "Detalhe de uma coletânea customizada",
+  middleware: [optionalAuth] as const,
   request: {
     params: z.object({
       id: z.string().openapi({ description: "ID da coletânea", example: "1" }),
@@ -184,6 +203,7 @@ customRoutes.openapi(getCollectionRoute, (c) => {
   try {
     const { id } = c.req.valid("param");
     const db = getDb();
+    const user = c.get("user") as { id_user: number } | undefined;
 
     const collection = db
       .prepare(
@@ -196,6 +216,14 @@ customRoutes.openapi(getCollectionRoute, (c) => {
       .get(parseInt(id, 10)) as any;
 
     if (!collection) {
+      return c.json({ error: "Coletânea não encontrada" }, 404);
+    }
+
+    // api#82: privada só o dono acessa (404, não 403 — não revela existência)
+    if (
+      collection.visibility === "private" &&
+      (!user || collection.owner_id !== user.id_user)
+    ) {
       return c.json({ error: "Coletânea não encontrada" }, 404);
     }
 
@@ -274,12 +302,13 @@ customRoutes.openapi(updateCollectionRoute, (c) => {
 
     db.prepare(
       `UPDATE custom_collections
-       SET name = ?, description = ?, cover_url = ?, updated_at = CURRENT_TIMESTAMP
+       SET name = ?, description = ?, cover_url = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id_collection = ?`,
     ).run(
       body.name ?? collection.name,
       body.description ?? collection.description,
       body.cover_url !== undefined ? body.cover_url : collection.cover_url,
+      body.visibility ?? collection.visibility ?? "public",
       parseInt(id, 10),
     );
 
@@ -1371,6 +1400,12 @@ import {
   hashToken,
   verifyPassword,
 } from "./auth.service.js";
+import {
+  sendNewLoginEmail,
+  sendResetTokenEmail,
+  sendWelcomeEmail,
+  smtpConfigured,
+} from "./mail.service.js";
 
 const registerRoute = createRoute({
   method: "post",
@@ -1413,7 +1448,7 @@ customRoutes.openapi(registerRoute, (c) => {
 
     const passwordHash = hashPassword(body.password);
 
-    let result;
+    let result: { lastInsertRowid: number | bigint };
     try {
       result = db
         .prepare(
@@ -1432,6 +1467,9 @@ customRoutes.openapi(registerRoute, (c) => {
     db.prepare(
       `INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`,
     ).run(hashToken(token), userId);
+
+    // Boas-vindas: fire-and-forget, nunca bloqueia nem falha o registro
+    void sendWelcomeEmail(body.email, body.displayName).catch(() => {});
 
     return c.json(
       {
@@ -1497,6 +1535,13 @@ customRoutes.openapi(loginRoute, (c) => {
     db.prepare(
       `INSERT INTO custom_sessions (token_hash, id_user) VALUES (?, ?)`,
     ).run(hashToken(token), user.id_user);
+
+    // Aviso de novo login: fire-and-forget (data local do servidor, PT-BR)
+    void sendNewLoginEmail(
+      user.email,
+      user.display_name ?? "usuário",
+      new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
+    ).catch(() => {});
 
     return c.json(
       {
@@ -1591,6 +1636,154 @@ customRoutes.openapi(meRoute, (c) => {
     },
     200,
   );
+});
+
+// ============================================
+// Auth — reset de senha (sem SMTP)
+// ============================================
+// Fluxo: usuário pede reset → API gera token opaco de 1h (uso único) → o
+// token é ENTREGUE AO USUÁRIO por canal externo (suporte/tela admin do
+// operador). Sem SMTP nesta fase: nada é enviado automaticamente.
+// forgot-password responde 200 SEMPRE (não revela se o e-mail existe).
+
+const forgotPasswordRoute = createRoute({
+  method: "post",
+  path: "/auth/forgot-password",
+  tags: ["custom"],
+  description: "Gera token de reset (uso único, 1h). Resposta sempre 200.",
+  request: {
+    body: { content: { "application/json": { schema: ForgotPasswordSchema } } },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            /** Presente SOMENTE quando RESET_TOKEN_EXPOSE=1 (dev/self-host sem SMTP). */
+            token: z.string().optional(),
+          }),
+        },
+      },
+      description: "Token gerado (ou resposta neutra se e-mail inexistente)",
+    },
+    500: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Erro interno",
+    },
+  },
+});
+
+customRoutes.openapi(forgotPasswordRoute, async (c) => {
+  try {
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const user = db
+      .prepare(`SELECT id_user, display_name FROM custom_users WHERE email = ?`)
+      .get(body.email) as { id_user: number; display_name: string } | undefined;
+
+    // Sem exposição de existência: resposta idêntica nos dois casos.
+    if (!user) return c.json({ ok: true }, 200);
+
+    const token = generateSessionToken();
+    const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    db.prepare(
+      `UPDATE custom_users SET reset_token_hash = ?, reset_token_expires = ? WHERE id_user = ?`,
+    ).run(hashToken(token), expires, user.id_user);
+
+    // 1) SMTP configurado → envia o token por e-mail (fluxo primário).
+    if (smtpConfigured()) {
+      const sent = await sendResetTokenEmail(
+        body.email,
+        user.display_name,
+        token,
+      );
+      if (sent) return c.json({ ok: true }, 200);
+      // SMTP falhou → cai pro fallback abaixo.
+    }
+
+    // 2) Fallback self-host/dev: expõe o token na resposta quando
+    // RESET_TOKEN_EXPOSE=1 (não exige canal de suporte).
+    if (process.env.RESET_TOKEN_EXPOSE === "1") {
+      return c.json({ ok: true, token }, 200);
+    }
+    return c.json({ ok: true }, 200);
+  } catch {
+    return c.json({ error: "Erro interno" }, 500);
+  }
+});
+
+const resetPasswordRoute = createRoute({
+  method: "post",
+  path: "/auth/reset-password",
+  tags: ["custom"],
+  description: "Troca a senha usando token de reset (uso único, 1h).",
+  request: {
+    body: { content: { "application/json": { schema: ResetPasswordSchema } } },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ ok: z.boolean() }) },
+      },
+      description: "Senha alterada",
+    },
+    400: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Token inválido ou expirado",
+    },
+    500: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Erro interno",
+    },
+  },
+});
+
+customRoutes.openapi(resetPasswordRoute, (c) => {
+  try {
+    const body = c.req.valid("json");
+    const db = getDb();
+
+    const user = db
+      .prepare(
+        `SELECT id_user, reset_token_expires FROM custom_users WHERE reset_token_hash = ?`,
+      )
+      .get(hashToken(body.token)) as
+      | { id_user: number; reset_token_expires: string }
+      | undefined;
+
+    if (
+      !user ||
+      !user.reset_token_expires ||
+      new Date(user.reset_token_expires).getTime() < Date.now()
+    ) {
+      return c.json({ error: "Token inválido ou expirado" }, 400);
+    }
+
+    const passwordHash = hashPassword(body.password);
+    // Uso único: limpa o token ao trocar a senha. Invalida também todas as
+    // sessões abertas (senha vazou — melhor derrubar tudo).
+    const sweep = db.transaction(() => {
+      db.prepare(
+        `UPDATE custom_users SET password_hash = ?, reset_token_hash = NULL, reset_token_expires = NULL WHERE id_user = ?`,
+      ).run(passwordHash, user.id_user);
+      db.prepare(`DELETE FROM custom_sessions WHERE id_user = ?`).run(
+        user.id_user,
+      );
+    });
+    sweep();
+
+    return c.json({ ok: true }, 200);
+  } catch {
+    return c.json({ error: "Erro interno" }, 500);
+  }
 });
 
 export { customRoutes };

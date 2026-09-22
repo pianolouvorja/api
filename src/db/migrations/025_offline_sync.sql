@@ -1,4 +1,4 @@
--- 023_offline_sync.sql
+-- 025_offline_sync.sql
 -- Schema de sincronização offline-first das coletâneas custom.
 -- Conceitos:
 --   client_uuid: identidade client-side do item (uuid v4 gerado no app).
