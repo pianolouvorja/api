@@ -1,4 +1,4 @@
-import type { Env, MiddlewareHandler } from "hono";
+import type { MiddlewareHandler } from "hono";
 import { createMiddleware } from "hono/factory";
 import { getDb } from "../../db/connection.js";
 import { hashToken } from "./auth.service.js";
