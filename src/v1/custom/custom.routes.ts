@@ -23,6 +23,25 @@ import {
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
 } from "./custom.schemas.js";
+import {
+  getActiveSeasonalMultiplier,
+  listUnreadNotifications,
+  markAllRead,
+  promoteMusicToF,
+} from "./promotion.service.js";
+import {
+  checkAnomalyAndFreeze,
+  creditPoints,
+  evaluateBadges,
+  getRanking,
+  getUserPosition,
+  recordCollectionUse,
+} from "./ranking.service.js";
+import {
+  completeWeeklyTask,
+  getWeeklyTasksForUser,
+  isoWeekKey,
+} from "./weekly-tasks.service.js";
 import { firebaseAuth } from "./firebase-auth.middleware.js";
 
 const customRoutes = new OpenAPIHono();
@@ -73,6 +92,10 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
       FROM custom_collections cc
       LEFT JOIN custom_musics cm ON cm.id_collection = cc.id_collection
       WHERE ${user ? "(cc.visibility = 'public' OR cc.owner_id = ?)" : "cc.visibility = 'public'"}
+        AND NOT EXISTS (
+          SELECT 1 FROM collection_reports r
+          WHERE r.collection_id = cc.id_collection AND r.status = 'open'
+        )
       GROUP BY cc.id_collection ORDER BY cc.updated_at DESC
     `;
     if (user) {
@@ -82,14 +105,21 @@ customRoutes.openapi(listCollectionsRoute, (c) => {
 
     const collections = db.prepare(query).all(...params) as any[];
 
+    // Paginação (query da Comunidade): page/per_page via query string.
+    const page = Math.max(1, Number(c.req.query("page") ?? 1) || 1);
+    const perPageRaw = Number(c.req.query("per_page") ?? 24) || 24;
+    const perPage = Math.min(100, Math.max(1, perPageRaw));
+    const start = (page - 1) * perPage;
+    const pageItems = collections.slice(start, start + perPage);
+
     return c.json(
       {
-        data: collections,
+        data: pageItems,
         meta: {
           total: collections.length,
-          per_page: collections.length,
-          current_page: 1,
-          last_page: 1,
+          page,
+          per_page: perPage,
+          last_page: Math.max(1, Math.ceil(collections.length / perPage)),
         },
       },
       200,
@@ -162,6 +192,13 @@ customRoutes.openapi(createCollectionRoute, async (c) => {
     const collection = db
       .prepare(`SELECT * FROM custom_collections WHERE id_collection = ?`)
       .get(result.lastInsertRowid) as any;
+
+    // F2: publicar coletânea pública credita +10 (SPEC §2). Privada não pontua.
+    if ((body.visibility ?? "public") === "public") {
+      creditPoints(db, user.id_user, "publish", Number(result.lastInsertRowid));
+      checkAnomalyAndFreeze(db, user.id_user);
+      evaluateBadges(db, user.id_user);
+    }
 
     return c.json({ ...collection, musics_count: 0 }, 201);
   } catch (error) {
@@ -1828,6 +1865,524 @@ customRoutes.openapi(resetPasswordRoute, (c) => {
   } catch {
     return c.json({ error: "Erro interno" }, 500);
   }
+});
+
+// ============================================
+// Ranking & Gamificação (F1..F2) — SPEC 16/09
+// ============================================
+
+const recordUseRoute = createRoute({
+  method: "post",
+  path: "/collections/{id}/use",
+  tags: ["custom"],
+  description:
+    "Registra uso de coletânea pública (1x por usuário×coletânea; credita +5 ao dono)",
+  middleware: [requireAuth] as const,
+  request: {
+    params: z.object({ id: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ ok: z.boolean(), first_use: z.boolean() }),
+        },
+      },
+      description: "Uso registrado (ou já existente)",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    404: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Coletânea não encontrada",
+    },
+  },
+});
+
+customRoutes.openapi(recordUseRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const collectionId = Number(c.req.valid("param").id);
+
+  const exists = db
+    .prepare(
+      `SELECT 1 FROM custom_collections WHERE id_collection = ? AND visibility = 'public'`,
+    )
+    .get(collectionId);
+  if (!exists) return c.json({ error: "Coletânea não encontrada" }, 404);
+
+  const firstUse = recordCollectionUse(db, user.id_user, collectionId);
+  if (firstUse) {
+    const owner = db
+      .prepare(
+        `SELECT owner_id FROM custom_collections WHERE id_collection = ?`,
+      )
+      .get(collectionId) as { owner_id: number | null } | undefined;
+    if (owner?.owner_id != null) evaluateBadges(db, owner.owner_id);
+  }
+  return c.json({ ok: true, first_use: firstUse }, 200);
+});
+
+const rankingRoute = createRoute({
+  method: "get",
+  path: "/ranking",
+  tags: ["custom"],
+  description:
+    "Ranking global de contribuidores (janela week|all; desempate por ponto mais antigo)",
+  request: {
+    query: z.object({
+      window: z.enum(["week", "all"]).optional().default("all"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(
+              z.object({
+                position: z.number(),
+                user_id: z.number(),
+                display_name: z.string().nullable(),
+                total: z.number(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Ranking global",
+    },
+  },
+});
+
+customRoutes.openapi(rankingRoute, (c) => {
+  const db = getDb();
+  const window = c.req.valid("query").window;
+  const data = getRanking(db, window);
+  return c.json({ data }, 200);
+});
+
+const myPositionRoute = createRoute({
+  method: "get",
+  path: "/ranking/me",
+  tags: ["custom"],
+  description: "Posição do usuário autenticado no ranking (week|all)",
+  middleware: [requireAuth] as const,
+  request: {
+    query: z.object({
+      window: z.enum(["week", "all"]).optional().default("all"),
+    }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            position: z.number().nullable(),
+            total: z.number().nullable(),
+          }),
+        },
+      },
+      description: "Posição no ranking (null se não pontuou)",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(myPositionRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const window = c.req.valid("query").window;
+  const pos = getUserPosition(db, user.id_user, window);
+  return c.json(
+    { position: pos?.position ?? null, total: pos?.total ?? null },
+    200,
+  );
+});
+
+// ============================================
+// Tarefas semanais (F4)
+// ============================================
+
+const weeklyTasksRoute = createRoute({
+  method: "get",
+  path: "/weekly-tasks",
+  tags: ["custom"],
+  description:
+    "Tarefas semanais do usuário autenticado (3 rotativas, reset domingo 00:00 UTC-3)",
+  middleware: [requireAuth] as const,
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            week_key: z.string(),
+            data: z.array(
+              z.object({
+                id: z.string(),
+                description: z.string(),
+                done: z.boolean(),
+                bonus: z.number(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Tarefas da semana",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(weeklyTasksRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const weekKey = isoWeekKey();
+  const tasks = getWeeklyTasksForUser(db, user.id_user, weekKey).map((t) => ({
+    ...t,
+    bonus: 15,
+  }));
+  return c.json({ week_key: weekKey, data: tasks }, 200);
+});
+
+const completeTaskRoute = createRoute({
+  method: "post",
+  path: "/weekly-tasks/{taskId}/complete",
+  tags: ["custom"],
+  description:
+    "Marca tarefa semanal como concluída (idempotente; +15 na 1a vez da semana)",
+  middleware: [requireAuth] as const,
+  request: {
+    params: z.object({ taskId: z.string() }),
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({ ok: z.boolean(), credited: z.boolean() }),
+        },
+      },
+      description: "Tarefa marcada",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    404: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Tarefa não existe nesta semana",
+    },
+  },
+});
+
+customRoutes.openapi(completeTaskRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const weekKey = isoWeekKey();
+  const taskId = c.req.valid("param").taskId;
+
+  const task = getWeeklyTasksForUser(db, user.id_user, weekKey).find(
+    (t) => t.id === taskId,
+  );
+  if (!task) return c.json({ error: "Tarefa não existe nesta semana" }, 404);
+
+  // Validação mínima do servidor: tarefa done = marcada pelo cliente após
+  // cumprir; o servidor garante idempotência e bônus 1x. Validações fortes
+  // por tarefa (contagens) entram no F5+ (anti-fraude).
+  const credited = completeWeeklyTask(db, user.id_user, task, weekKey);
+  if (credited) {
+    creditPoints(db, user.id_user, "weekly_task");
+  }
+  return c.json({ ok: true, credited }, 200);
+});
+
+// ============================================
+// Moderação (F5) — report esconde até revisão
+// ============================================
+
+const reportCollectionRoute = createRoute({
+  method: "post",
+  path: "/collections/{id}/report",
+  tags: ["custom"],
+  description:
+    "Reporta coletânea (esconde do catálogo público até revisão da curadoria)",
+  middleware: [requireAuth] as const,
+  request: {
+    params: z.object({ id: z.string() }),
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({ reason: z.string().min(3).max(500) }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ ok: z.boolean() }) },
+      },
+      description: "Report registrado",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    404: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Coletânea não encontrada",
+    },
+  },
+});
+
+customRoutes.openapi(reportCollectionRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  const collectionId = Number(c.req.valid("param").id);
+  const { reason } = c.req.valid("json");
+
+  const exists = db
+    .prepare(`SELECT 1 FROM custom_collections WHERE id_collection = ?`)
+    .get(collectionId);
+  if (!exists) return c.json({ error: "Coletânea não encontrada" }, 404);
+
+  db.prepare(
+    `INSERT OR IGNORE INTO collection_reports (collection_id, reporter_id, reason) VALUES (?, ?, ?)`,
+  ).run(collectionId, user.id_user, reason);
+
+  return c.json({ ok: true }, 200);
+});
+
+// ============================================
+// F6: promoção ao oficial + notificações
+// ============================================
+
+const promoteRoute = createRoute({
+  method: "post",
+  path: "/admin/promote-music",
+  tags: ["custom"],
+  description:
+    "Promove faixa custom ao acervo oficial (curador; +50 pts, badge Autor Oficial, crédito permanente)",
+  middleware: [requireAuth] as const,
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            custom_music_id: z.number(),
+            official_music_id: z.number(),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            ok: z.boolean(),
+            awarded_to: z.number().nullable().optional(),
+            points: z.number().optional(),
+          }),
+        },
+      },
+      description: "Promovida",
+    },
+    400: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Erro de validação",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+    403: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Sem permissão de curador",
+    },
+  },
+});
+
+customRoutes.openapi(promoteRoute, (c) => {
+  const user = c.get("user") as { id_user: number };
+
+  // Curadores autorizados via env (ids separados por vírgula). Sem env,
+  // nenhum usuário tem poder de promoção (fail-closed).
+  const curators = (process.env.CURATOR_USER_IDS ?? "")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!curators.includes(user.id_user)) {
+    return c.json({ error: "Sem permissão de curador" }, 403);
+  }
+
+  const db = getDb();
+  const { custom_music_id, official_music_id } = c.req.valid("json");
+  const result = promoteMusicToF(
+    db,
+    custom_music_id,
+    official_music_id,
+    user.id_user,
+    (to, subject, body) => {
+      // Injeção do mail real fica no compose da rota (mail.service já existe).
+      console.log(`[f6-mail] to=${to} subject=${subject}`);
+    },
+  );
+  if (!result.ok) return c.json({ error: result.error ?? "Erro" }, 400);
+  return c.json(
+    { ok: true, awarded_to: result.awardedTo ?? null, points: result.points },
+    200,
+  );
+});
+
+const notificationsRoute = createRoute({
+  method: "get",
+  path: "/notifications",
+  tags: ["custom"],
+  description: "Notificações não lidas do usuário autenticado",
+  middleware: [requireAuth] as const,
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            data: z.array(
+              z.object({
+                id: z.number(),
+                type: z.string(),
+                title: z.string(),
+                body: z.string(),
+                created_at: z.string(),
+              }),
+            ),
+          }),
+        },
+      },
+      description: "Notificações não lidas",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(notificationsRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  return c.json({ data: listUnreadNotifications(db, user.id_user) }, 200);
+});
+
+const markReadRoute = createRoute({
+  method: "post",
+  path: "/notifications/read-all",
+  tags: ["custom"],
+  description: "Marca todas as notificações do usuário como lidas",
+  middleware: [requireAuth] as const,
+  responses: {
+    200: {
+      content: {
+        "application/json": { schema: z.object({ ok: z.boolean() }) },
+      },
+      description: "Marcadas",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Não autenticado",
+    },
+  },
+});
+
+customRoutes.openapi(markReadRoute, (c) => {
+  const db = getDb();
+  const user = c.get("user") as { id_user: number };
+  markAllRead(db, user.id_user);
+  return c.json({ ok: true }, 200);
+});
+
+// ============================================
+// F6: evento sazonal ativo (banner público)
+// ============================================
+
+const seasonalEventRoute = createRoute({
+  method: "get",
+  path: "/seasonal-event",
+  tags: ["custom"],
+  description:
+    "Evento sazonal ativo (multiplicador de pontos) — público, para banner na Comunidade",
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: z.object({
+            active: z.boolean(),
+            name: z.string().optional(),
+            description: z.string().optional(),
+            multiplier: z.number().optional(),
+          }),
+        },
+      },
+      description: "Evento ativo ou active:false",
+    },
+  },
+});
+
+customRoutes.openapi(seasonalEventRoute, (c) => {
+  const db = getDb();
+  const row = db
+    .prepare(
+      `SELECT name, description, multiplier FROM seasonal_events
+       WHERE active = 1 AND datetime('now') BETWEEN starts_at AND ends_at
+       ORDER BY multiplier DESC LIMIT 1`,
+    )
+    .get() as
+    | { name: string; description: string | null; multiplier: number }
+    | undefined;
+  if (!row) return c.json({ active: false }, 200);
+  return c.json(
+    {
+      active: true,
+      name: row.name,
+      description: row.description ?? undefined,
+      multiplier: row.multiplier,
+    },
+    200,
+  );
 });
 
 export { customRoutes };
