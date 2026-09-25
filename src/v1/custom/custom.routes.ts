@@ -1,7 +1,11 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { getDb } from "../../db/connection.js";
-import { optionalAuth, requireAuth } from "./auth.middleware.js";
+import {
+  type CustomAuthEnv,
+  optionalAuth,
+  requireAuth,
+} from "./auth.middleware.js";
 import {
   AuthResponseSchema,
   CreateCustomCollectionSchema,
@@ -23,6 +27,7 @@ import {
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
 } from "./custom.schemas.js";
+import { firebaseAuth } from "./firebase-auth.middleware.js";
 import {
   getActiveSeasonalMultiplier,
   listUnreadNotifications,
@@ -43,11 +48,12 @@ import {
   isoWeekKey,
 } from "./weekly-tasks.service.js";
 
-const customRoutes = new OpenAPIHono();
+const customRoutes = new OpenAPIHono<CustomAuthEnv>();
 
 // Rotas públicas (sem auth): health/register/login. Todo o resto valida sessão
 // via optionalAuth (leitura aceita anônimo) ou exige owner check na rota.
 customRoutes.use("*", optionalAuth);
+customRoutes.use("*", firebaseAuth);
 
 // ============================================
 // Collections
@@ -1595,6 +1601,48 @@ customRoutes.openapi(loginRoute, (c) => {
     console.error(error);
     return c.json({ error: "Erro ao fazer login" }, 500);
   }
+});
+
+// POST /auth/firebase-session — troca o Firebase ID token (Bearer) por uma
+// sessão com id_user real. O middleware firebaseAuth (aplicado em "*" acima)
+// já validou o token e fez o upsert em custom_users; aqui só devolvemos.
+const firebaseSessionRoute = createRoute({
+  method: "post",
+  path: "/auth/firebase-session",
+  tags: ["custom"],
+  description:
+    "Valida Firebase ID token (Bearer) e devolve sessão com id_user real",
+  responses: {
+    200: {
+      content: { "application/json": { schema: AuthResponseSchema } },
+      description: "Sessão válida",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Token Firebase ausente ou inválido",
+    },
+  },
+});
+
+customRoutes.openapi(firebaseSessionRoute, (c) => {
+  const user = c.get("user");
+  if (!user) return c.json({ error: "Não autenticado" }, 401);
+
+  const raw = c.req.header("authorization") ?? "";
+  const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+  return c.json(
+    {
+      token,
+      user: {
+        id_user: user.id_user,
+        email: user.email,
+        displayName: user.display_name,
+      },
+    },
+    200,
+  );
 });
 
 const logoutRoute = createRoute({
