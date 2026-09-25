@@ -45,6 +45,10 @@ import {
 
 const customRoutes = new OpenAPIHono();
 
+// Rotas públicas (sem auth): health/register/login. Todo o resto valida sessão
+// via optionalAuth (leitura aceita anônimo) ou exige owner check na rota.
+customRoutes.use("*", optionalAuth);
+
 // ============================================
 // Collections
 // ============================================
@@ -1312,6 +1316,7 @@ const uploadCustomFileRoute = createRoute({
   tags: ["custom"],
   description:
     "Upload de arquivo de mídia custom (áudio ou imagem) para uso em músicas/coletâneas",
+  middleware: [requireAuth] as const,
   request: {
     body: {
       content: {
@@ -1356,7 +1361,8 @@ const uploadCustomFileRoute = createRoute({
   },
 });
 
-customRoutes.openapi(uploadCustomFileRoute, async (c) => {
+// biome-ignore lint/suspicious/noExplicitAny: OpenAPI route context omite Variables injetadas por requireAuth.
+customRoutes.openapi(uploadCustomFileRoute, async (c: any) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file");
@@ -1365,6 +1371,13 @@ customRoutes.openapi(uploadCustomFileRoute, async (c) => {
 
     if (!(file instanceof File)) {
       return c.json({ error: 'Campo "file" ausente ou inválido' }, 400);
+    }
+
+    const user = c.get("user") as { id_user: number };
+    const { quotaCheck } = await import("./quota.service.js");
+    const quota = quotaCheck(user.id_user, file.size);
+    if (!quota.ok) {
+      return c.json({ error: "quota_exceeded", message: quota.message }, 413);
     }
 
     // Sanitiza nome: mantém basename, remove separadores e caracteres perigosos
@@ -1376,7 +1389,8 @@ customRoutes.openapi(uploadCustomFileRoute, async (c) => {
       return c.json({ error: "Nome de arquivo inválido" }, 400);
     }
 
-    const destDir = join(CUSTOM_MEDIA_DIR, kind);
+    // B11: mídia isolada por id numérico do usuário; nunca e-mail no path.
+    const destDir = join(CUSTOM_MEDIA_DIR, String(user.id_user), kind);
     mkdirSync(destDir, { recursive: true });
 
     // Nome final: id_generator-friendly — prefixa timestamp se já existir
@@ -1392,7 +1406,7 @@ customRoutes.openapi(uploadCustomFileRoute, async (c) => {
     }
     writeFileSync(path, bytes);
 
-    const urlPath = `/custom/${kind}/${finalName}`;
+    const urlPath = `/custom/${user.id_user}/${kind}/${finalName}`;
     const type = kind === "audio" ? "audio" : "image";
 
     const db = getDb();
