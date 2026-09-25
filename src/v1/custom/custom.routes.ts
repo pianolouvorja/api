@@ -2326,7 +2326,9 @@ customRoutes.openapi(seasonalEventRoute, (c) => {
        WHERE active = 1 AND datetime('now') BETWEEN starts_at AND ends_at
        ORDER BY multiplier DESC LIMIT 1`,
     )
-    .get() as { name: string; description: string | null; multiplier: number } | undefined;
+    .get() as
+    | { name: string; description: string | null; multiplier: number }
+    | undefined;
   if (!row) return c.json({ active: false }, 200);
   return c.json(
     {
