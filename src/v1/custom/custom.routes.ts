@@ -23,12 +23,14 @@ import {
   UpdateCustomLyricSchema,
   UpdateCustomMusicSchema,
 } from "./custom.schemas.js";
+import { firebaseAuth } from "./firebase-auth.middleware.js";
 
 const customRoutes = new OpenAPIHono();
 
 // Rotas públicas (sem auth): health/register/login. Todo o resto valida sessão
 // via optionalAuth (leitura aceita anônimo) ou exige owner check na rota.
 customRoutes.use("*", optionalAuth);
+customRoutes.use("*", firebaseAuth);
 
 // ============================================
 // Collections
