@@ -1,7 +1,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Context } from "hono";
 import { getDb } from "../../db/connection.js";
-import { optionalAuth, requireAuth } from "./auth.middleware.js";
+import { optionalAuth, requireAuth, type CustomAuthEnv } from "./auth.middleware.js";
 import {
   AuthResponseSchema,
   CreateCustomCollectionSchema,
@@ -44,7 +44,7 @@ import {
 } from "./weekly-tasks.service.js";
 import { firebaseAuth } from "./firebase-auth.middleware.js";
 
-const customRoutes = new OpenAPIHono();
+const customRoutes = new OpenAPIHono<CustomAuthEnv>();
 
 // Rotas públicas (sem auth): health/register/login. Todo o resto valida sessão
 // via optionalAuth (leitura aceita anônimo) ou exige owner check na rota.
