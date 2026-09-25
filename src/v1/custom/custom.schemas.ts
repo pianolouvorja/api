@@ -17,8 +17,8 @@ export const CustomCollectionsListResponseSchema = z.object({
   data: z.array(CustomCollectionSchema),
   meta: z.object({
     total: z.number(),
+    page: z.number(),
     per_page: z.number(),
-    current_page: z.number(),
     last_page: z.number(),
   }),
 });
