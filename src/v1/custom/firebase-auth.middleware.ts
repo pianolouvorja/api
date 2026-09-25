@@ -45,6 +45,7 @@ export const firebaseAuth: MiddlewareHandler<CustomAuthEnv> =
       const app = await getFirebaseApp();
       const { getAuth } = await import("firebase-admin/auth");
       const decoded = await getAuth(app).verifyIdToken(token, true);
+      console.log("[firebaseAuth] token válido project_id:", decoded.firebase?.project_id ?? decoded.aud, "| uid:", decoded.uid);
 
       const db = getDb();
       let user = db
@@ -98,8 +99,9 @@ export const firebaseAuth: MiddlewareHandler<CustomAuthEnv> =
           display_name: user.display_name,
         });
       }
-    } catch {
+    } catch (e) {
       // Token Firebase inválido/expirado → segue anônimo (mesma semântica do optionalAuth)
+      console.warn("[firebaseAuth] verifyIdToken FALHOU:", e instanceof Error ? e.message : String(e));
     }
     await next();
   });

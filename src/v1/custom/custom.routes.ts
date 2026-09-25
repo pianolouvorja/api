@@ -1562,6 +1562,48 @@ customRoutes.openapi(loginRoute, (c) => {
   }
 });
 
+// POST /auth/firebase-session — troca o Firebase ID token (Bearer) por uma
+// sessão com id_user real. O middleware firebaseAuth (aplicado em "*" acima)
+// já validou o token e fez o upsert em custom_users; aqui só devolvemos.
+const firebaseSessionRoute = createRoute({
+  method: "post",
+  path: "/auth/firebase-session",
+  tags: ["custom"],
+  description:
+    "Valida Firebase ID token (Bearer) e devolve sessão com id_user real",
+  responses: {
+    200: {
+      content: { "application/json": { schema: AuthResponseSchema } },
+      description: "Sessão válida",
+    },
+    401: {
+      content: {
+        "application/json": { schema: z.object({ error: z.string() }) },
+      },
+      description: "Token Firebase ausente ou inválido",
+    },
+  },
+});
+
+customRoutes.openapi(firebaseSessionRoute, (c) => {
+  const user = c.get("user");
+  if (!user) return c.json({ error: "Não autenticado" }, 401);
+
+  const raw = c.req.header("authorization") ?? "";
+  const token = raw.startsWith("Bearer ") ? raw.slice(7) : "";
+  return c.json(
+    {
+      token,
+      user: {
+        id_user: user.id_user,
+        email: user.email,
+        displayName: user.display_name,
+      },
+    },
+    200,
+  );
+});
+
 const logoutRoute = createRoute({
   method: "post",
   path: "/auth/logout",
